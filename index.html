@@ -1,0 +1,893 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Aries Vigilant // WiFi & BLE Sniffer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0b0f0c;
+    --panel: #111713;
+    --panel-border: #22301f;
+    --text: #d7f2d0;
+    --text-dim: #7f9c78;
+    --accent: #3ddc84;
+    --accent-dim: #245c3d;
+    --danger: #ff4d4d;
+    --danger-dim: #5c2323;
+    --warn: #ffb020;
+    --mono: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 16px;
+  }
+  h1 {
+    font-size: 16px;
+    margin: 0 0 4px;
+    letter-spacing: 0.5px;
+    color: var(--accent);
+  }
+  .subtitle { color: var(--text-dim); margin-bottom: 16px; font-size: 12px; }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--danger); display: inline-block; margin-right: 6px;
+    box-shadow: 0 0 6px var(--danger);
+  }
+  .dot.on { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+
+  button {
+    font-family: var(--mono);
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  button.primary { border-color: var(--accent); color: var(--accent); }
+  button.danger { border-color: var(--danger); color: var(--danger); }
+  button.danger:hover:not(:disabled) { background: var(--danger-dim); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  @media (min-width: 900px) {
+    .grid { grid-template-columns: 1.3fr 1fr; }
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 12px 14px;
+  }
+  .panel h2 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin: 0 0 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .status-row { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 10px; }
+  .stat { display: flex; flex-direction: column; }
+  .stat .label { color: var(--text-dim); font-size: 10px; text-transform: uppercase; }
+  .stat .value { font-size: 15px; color: var(--accent); }
+
+  .deauth-banner {
+    display: none;
+    background: var(--danger-dim);
+    border: 1px solid var(--danger);
+    color: #ffd4d4;
+    padding: 8px 10px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    font-weight: bold;
+  }
+  .deauth-banner.active { display: block; }
+
+  .spam-banner {
+    display: none;
+    background: var(--warn-dim, rgba(255,180,60,0.12));
+    border: 1px solid var(--warn);
+    color: #ffe6b0;
+    padding: 8px 10px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    font-weight: bold;
+  }
+  .spam-banner.active { display: block; }
+
+  @keyframes spamFlash {
+    0%, 49%  { background: var(--danger); color: #fff; }
+    50%, 100% { background: transparent; color: var(--danger); }
+  }
+  #spamTile.alert {
+    animation: spamFlash 0.7s steps(1, end) infinite;
+    border-radius: 4px;
+    padding: 2px 6px;
+    margin: -2px -6px;
+  }
+  #spamTile.alert .label,
+  #spamTile.alert .value { color: inherit; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--panel-border); }
+  th { color: var(--text-dim); font-weight: normal; text-transform: uppercase; font-size: 10px; }
+  tr:hover td { background: rgba(61, 220, 132, 0.05); }
+  .mac { color: var(--text-dim); }
+  .rssi-strong { color: var(--accent); }
+  .rssi-mid { color: var(--warn); }
+  .rssi-weak { color: var(--danger); }
+  .tag-open { color: var(--danger); }
+  .tag-enc { color: var(--text-dim); }
+  .band-24 { color: var(--accent); }
+  .band-5 { color: var(--warn); }
+  .cap-badge {
+    font-size: 10.5px;
+    color: var(--accent);
+    border: 1px solid var(--accent-dim);
+    border-radius: 10px;
+    padding: 2px 8px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+  .row-actions { display: flex; gap: 6px; align-items: center; }
+  .row-actions input[type=number] { width: 48px; background: var(--bg); color: var(--text); border: 1px solid var(--panel-border); border-radius: 3px; padding: 2px 4px; font-family: var(--mono); }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+
+  .arm-box {
+    border: 1px dashed var(--danger);
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-top: 8px;
+    font-size: 11.5px;
+    color: var(--text-dim);
+  }
+  .arm-box label { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; cursor: pointer; }
+
+  #console {
+    background: #000;
+    color: #8fe08f;
+    font-size: 11px;
+    padding: 8px;
+    height: 160px;
+    overflow-y: auto;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .cmdline { display: flex; gap: 6px; margin-top: 8px; }
+  .cmdline input {
+    flex: 1;
+    background: #000;
+    color: var(--accent);
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .empty { color: var(--text-dim); font-style: italic; }
+  .footnote { color: var(--text-dim); font-size: 10.5px; margin-top: 16px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<h1>ARIES VIGILANT // WiFi &amp; BLE Sniffer</h1>
+<div class="subtitle">T-Dongle-C5 · Web Serial console — requires Chrome or Edge, opened as a local file (not embedded).</div>
+
+<div class="topbar">
+  <span><span id="connDot" class="dot"></span><span id="connLabel">disconnected</span></span>
+  <button id="btnConnect" class="primary">Connect</button>
+  <button id="btnDisconnect" disabled>Disconnect</button>
+  <span class="cap-badge" title="This firmware build patches libnet80211.a so the ESP32-C5 actually transmits 0xC0 deauth frames (2.4GHz + 5GHz).">deauth TX: enabled</span>
+</div>
+
+<div id="deauthBanner" class="deauth-banner">⚠ DEAUTH ACTIVE — <span id="deauthText"></span></div>
+<div id="spamBanner" class="spam-banner">📡 BLE PAIRING-SPAM DETECTED — <span id="spamText"></span></div>
+
+<div class="panel" style="margin-bottom:16px;">
+  <h2>Status</h2>
+  <div class="status-row">
+    <div class="stat"><span class="label">Mode</span><span class="value" id="statMode">—</span></div>
+    <div class="stat"><span class="label">APs</span><span class="value" id="statAp">—</span></div>
+    <div class="stat"><span class="label">Stations</span><span class="value" id="statSta">—</span></div>
+    <div class="stat"><span class="label">BLE</span><span class="value" id="statBle">—</span></div>
+    <div class="stat"><span class="label">Fuzz</span><span class="value" id="statFuzz">—</span></div>
+    <div class="stat" id="spamTile"><span class="label">Spam Watch</span><span class="value" id="statSpam">—</span></div>
+    <div class="stat"><span class="label">Channel</span><span class="value" id="statCh">—</span></div>
+    <div class="stat"><span class="label">Packets</span><span class="value" id="statPkts">—</span></div>
+    <div class="stat"><span class="label">Logging</span><span class="value" id="statLog">—</span></div>
+  </div>
+  <div class="controls">
+    <button id="btnScan" disabled>Start Scan</button>
+    <button id="btnStop" disabled>Stop</button>
+    <button id="btnRefresh" disabled>Refresh Lists</button>
+    <button id="btnAuto" disabled title="Toggle automatic 2s refresh of the AP/Station/BLE tables. When off, use Refresh Lists for manual control.">Auto-refresh: on</button>
+    <button id="btnLog" disabled>Log: off</button>
+    <button id="btnBle" disabled title="Start a continuous BLE scan (2.4GHz). Use Stop to end it.">BLE Scan</button>
+  </div>
+  <div class="arm-box">
+    <label><input type="checkbox" id="chkAuthorized" disabled> I own or am explicitly authorized to test the network(s) I'm about to target.</label>
+    <button id="btnArm" class="danger" disabled>Arm Deauth</button>
+    <span id="armStatus" style="margin-left:8px;">not armed</span>
+    <button id="btnArmFuzz" class="danger" disabled title="Arm BLE GATT fuzzing (writes malformed payloads to a target's writable characteristics). Uses the same authorization checkbox.">Arm Fuzz</button>
+    <span id="fuzzArmStatus" style="margin-left:8px;">not armed</span>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <h2>Access Points <span id="apCountLabel"></span></h2>
+    <table id="apTable">
+      <thead><tr><th>#</th><th>SSID</th><th>BSSID</th><th>Ch</th><th>Band</th><th>RSSI</th><th>Sec</th><th>Deauth</th></tr></thead>
+      <tbody><tr><td colspan="8" class="empty">Connect and click "Start Scan" to discover networks.</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>Stations <span id="staCountLabel"></span></h2>
+    <table id="staTable">
+      <thead><tr><th>MAC</th><th>AP</th><th>RSSI</th><th>Deauth</th></tr></thead>
+      <tbody><tr><td colspan="4" class="empty">No stations discovered yet.</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:16px;">
+  <h2>BLE Devices <span id="bleCountLabel"></span></h2>
+  <table id="bleTable">
+    <thead><tr><th>Name</th><th>Address</th><th>RSSI</th><th>Mfr</th><th>Fuzz</th></tr></thead>
+    <tbody><tr><td colspan="5" class="empty">Click "BLE Scan" to discover nearby Bluetooth LE devices.</td></tr></tbody>
+  </table>
+</div>
+
+<div class="panel" style="margin-top:16px;">
+  <h2>Console
+    <span>
+      <button id="btnCopyConsole" style="font-size:10px;">copy all</button>
+      <button id="btnClearConsole" style="font-size:10px;">clear</button>
+      <button id="btnToggleConsole" style="font-size:10px;">hide</button>
+    </span>
+  </h2>
+  <div id="console"></div>
+  <div class="cmdline">
+    <input id="cmdInput" placeholder="type a raw CLI command and press enter (e.g. help)" disabled>
+    <button id="btnSend" disabled>Send</button>
+  </div>
+</div>
+
+<div class="footnote">
+  Only run deauth against networks and devices you own or are explicitly authorized to test.
+  Unauthorized use is illegal in most jurisdictions. This page requires the "Arm Deauth" step
+  (which sends <code>enable-deauth</code> to the firmware) before any deauth button will work,
+  matching the firmware's own safety gate — it's a speed bump, not a substitute for your own
+  judgment and authorization.
+</div>
+
+<script>
+'use strict';
+
+let port, reader;
+// Unified connection handle. On desktop we use Web Serial; on Android (which
+// has no Web Serial) we use WebUSB against the ESP32-C5's CDC-ACM interface.
+// Both expose the same { kind, write(u8), close() } shape so the rest of the
+// app is transport-agnostic. Append ?usb to the URL to force the WebUSB path.
+let transport = null;
+let usbDevice = null, usbEpIn = null, usbEpOut = null, usbCtrlNum = null;
+const forceUsb = new URLSearchParams(location.search).has('usb');
+let lineBuffer = '';
+let cmdQueue = [];
+let cmdBusy = false;
+let armed = false;
+let fuzzArmed = false;
+let bleOn = false;
+let wifiOn = false;
+let autoRefresh = true;
+let statusTimer = null;
+
+const $ = (id) => document.getElementById(id);
+const consoleEl = $('console');
+
+function log(line) {
+  // Only auto-scroll if the user was already at (or near) the bottom --
+  // otherwise the 2s status poll fights any manual scroll-up to read/copy
+  // earlier output.
+  const nearBottom = consoleEl.scrollHeight - consoleEl.scrollTop - consoleEl.clientHeight < 40;
+  consoleEl.textContent += line + '\n';
+  if (nearBottom) consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+function setConnected(on) {
+  $('connDot').classList.toggle('on', on);
+  $('connLabel').textContent = on ? 'connected' : 'disconnected';
+  $('btnConnect').disabled = on;
+  $('btnDisconnect').disabled = !on;
+  ['btnScan','btnStop','btnRefresh','btnAuto','btnLog','btnBle','chkAuthorized','cmdInput','btnSend']
+    .forEach(id => $(id).disabled = !on);
+  updateArmUi();
+  if (on) {
+    statusTimer = setInterval(() => {
+      // Poll quietly (true) so the console isn't flooded with auto-refresh
+      // output. The status panel stays live regardless; the tables only
+      // auto-refresh when Auto-refresh is on.
+      sendCommand('status', true).catch(() => {});
+      if (autoRefresh) {
+        if (wifiOn) {
+          sendCommand('list', true).catch(() => {});
+          sendCommand('stations', true).catch(() => {});
+        }
+        if (bleOn) sendCommand('blelist', true).catch(() => {});
+      }
+    }, 2000);
+    sendCommand('status', true).catch(() => {});
+  } else if (statusTimer) {
+    clearInterval(statusTimer);
+    statusTimer = null;
+  }
+}
+
+function updateArmUi() {
+  const authorized = $('chkAuthorized').checked;
+  $('btnArm').disabled = !transport || !authorized || armed;
+  $('armStatus').textContent = armed ? 'ARMED' : 'not armed';
+  $('armStatus').style.color = armed ? 'var(--danger)' : 'var(--text-dim)';
+  $('btnArmFuzz').disabled = !transport || !authorized || fuzzArmed;
+  $('fuzzArmStatus').textContent = fuzzArmed ? 'ARMED' : 'not armed';
+  $('fuzzArmStatus').style.color = fuzzArmed ? 'var(--danger)' : 'var(--text-dim)';
+}
+$('chkAuthorized').addEventListener('change', updateArmUi);
+
+// ---- Transport plumbing (Web Serial on desktop, WebUSB on Android) ----
+
+async function connect() {
+  try {
+    if (!forceUsb && 'serial' in navigator) {
+      await connectSerial();
+    } else if ('usb' in navigator) {
+      await connectUsb();
+    } else {
+      alert('No supported transport. Use desktop Chrome/Edge (Web Serial) or Android Chrome (WebUSB).');
+      return;
+    }
+    setConnected(true);
+    log('[connected via ' + transport.kind + ']');
+  } catch (e) {
+    log('[connect failed] ' + e.message);
+  }
+}
+
+async function disconnect() {
+  try { if (transport) await transport.close(); } catch (e) { /* best effort */ }
+  transport = null;
+  setConnected(false);
+  log('[disconnected]');
+}
+
+// --- Web Serial (desktop) ---
+async function connectSerial() {
+  port = await navigator.serial.requestPort();
+  await port.open({ baudRate: 115200 });
+  const decoder = new TextDecoderStream();
+  port.readable.pipeTo(decoder.writable).catch(() => {});
+  reader = decoder.readable.getReader();
+  transport = {
+    kind: 'serial',
+    write: async (u8) => {
+      const w = port.writable.getWriter();
+      try { await w.write(u8); } finally { w.releaseLock(); }
+    },
+    close: async () => {
+      try { if (reader) await reader.cancel(); } catch (e) {}
+      try { if (port) await port.close(); } catch (e) {}
+      port = null; reader = null;
+    },
+  };
+  readLoopSerial();
+}
+
+async function readLoopSerial() {
+  try {
+    while (transport && transport.kind === 'serial') {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) handleIncoming(value);
+    }
+  } catch (e) {
+    log('[read error] ' + e.message);
+  }
+}
+
+// --- WebUSB (Android) : drive the ESP32-C5 CDC-ACM interface directly ---
+async function connectUsb() {
+  usbDevice = await navigator.usb.requestDevice({ filters: [{ vendorId: 0x303A }] });
+  await usbDevice.open();
+  if (usbDevice.configuration === null) await usbDevice.selectConfiguration(1);
+
+  // CDC data interface = class 0x0A (bulk in/out); control = class 0x02.
+  let dataIface = null, ctrlIface = null;
+  for (const iface of usbDevice.configuration.interfaces) {
+    const alt = iface.alternates[0];
+    if (alt.interfaceClass === 0x0A) dataIface = iface;
+    if (alt.interfaceClass === 0x02) ctrlIface = iface;
+  }
+  if (!dataIface) throw new Error('No CDC data interface (is this the dongle?)');
+
+  if (ctrlIface) { try { await usbDevice.claimInterface(ctrlIface.interfaceNumber); } catch (e) {} }
+  try {
+    await usbDevice.claimInterface(dataIface.interfaceNumber);
+  } catch (e) {
+    throw new Error('could not claim the serial interface — the OS may be holding it. ' +
+      'On Android, unplug/replug and retry; if it keeps failing, use a USB-serial terminal app ' +
+      'or switch to WiFi mode. (' + e.message + ')');
+  }
+
+  for (const ep of dataIface.alternates[0].endpoints) {
+    if (ep.type === 'bulk' && ep.direction === 'in') usbEpIn = ep.endpointNumber;
+    if (ep.type === 'bulk' && ep.direction === 'out') usbEpOut = ep.endpointNumber;
+  }
+  if (usbEpIn == null || usbEpOut == null) throw new Error('No bulk endpoints found');
+  usbCtrlNum = ctrlIface ? ctrlIface.interfaceNumber : dataIface.interfaceNumber;
+
+  // CDC SET_LINE_CODING (0x20): 115200, 1 stop, no parity, 8 data bits.
+  const lc = new DataView(new ArrayBuffer(7));
+  lc.setUint32(0, 115200, true); lc.setUint8(4, 0); lc.setUint8(5, 0); lc.setUint8(6, 8);
+  try {
+    await usbDevice.controlTransferOut(
+      { requestType: 'class', recipient: 'interface', request: 0x20, value: 0, index: usbCtrlNum },
+      lc.buffer);
+  } catch (e) {}
+  // CDC SET_CONTROL_LINE_STATE (0x22): DTR|RTS. ESP32 USB-serial needs DTR set.
+  try {
+    await usbDevice.controlTransferOut(
+      { requestType: 'class', recipient: 'interface', request: 0x22, value: 0x03, index: usbCtrlNum });
+  } catch (e) {}
+
+  transport = {
+    kind: 'usb',
+    write: async (u8) => { await usbDevice.transferOut(usbEpOut, u8); },
+    close: async () => {
+      try {
+        await usbDevice.controlTransferOut(
+          { requestType: 'class', recipient: 'interface', request: 0x22, value: 0x00, index: usbCtrlNum });
+      } catch (e) {}
+      try { await usbDevice.close(); } catch (e) {}
+      usbDevice = null;
+    },
+  };
+  readLoopUsb();
+}
+
+async function readLoopUsb() {
+  const decoder = new TextDecoder();
+  while (transport && transport.kind === 'usb' && usbDevice) {
+    try {
+      const r = await usbDevice.transferIn(usbEpIn, 64);
+      if (r.data && r.data.byteLength) handleIncoming(decoder.decode(r.data, { stream: true }));
+      if (r.status === 'stall') await usbDevice.clearHalt('in', usbEpIn);
+    } catch (e) {
+      log('[usb read ended] ' + e.message);
+      break;
+    }
+  }
+}
+
+function handleIncoming(chunk) {
+  lineBuffer += chunk;
+  let idx;
+  while ((idx = lineBuffer.indexOf('\n')) >= 0) {
+    const line = lineBuffer.slice(0, idx).replace(/\r$/, '');
+    lineBuffer = lineBuffer.slice(idx + 1);
+    onLine(line);
+  }
+  bumpQuietTimer();
+}
+
+let quietTimer = null;
+function bumpQuietTimer() {
+  if (quietTimer) clearTimeout(quietTimer);
+  quietTimer = setTimeout(finishCurrentCommand, 220);
+}
+
+let currentLines = [];
+function onLine(line) {
+  // Suppress console echo for quiet (auto-poll) commands; always show
+  // unsolicited output (errors, boot banner) that arrives with no command.
+  const quiet = cmdBusy && cmdQueue[0] && cmdQueue[0].quiet;
+  if (!quiet) log(line);
+  currentLines.push(line);
+}
+
+function finishCurrentCommand() {
+  if (!cmdBusy) return;
+  const { cmd, resolve } = cmdQueue[0];
+  cmdQueue.shift();
+  cmdBusy = false;
+  resolve({ cmd, lines: currentLines });
+  currentLines = [];
+  pumpQueue();
+}
+
+function pumpQueue() {
+  if (cmdBusy || cmdQueue.length === 0 || !transport) return;
+  cmdBusy = true;
+  const { cmd, quiet } = cmdQueue[0];
+  currentLines = [];
+  const data = new TextEncoder().encode(cmd + '\r\n');
+  transport.write(data).catch((e) => log('[write error] ' + e.message));
+  if (!quiet) log('> ' + cmd);
+}
+
+function sendCommand(cmd, quiet = false) {
+  return new Promise((resolve) => {
+    cmdQueue.push({ cmd, resolve, quiet });
+    pumpQueue();
+  }).then((result) => {
+    parseResponse(result.cmd, result.lines);
+    return result;
+  });
+}
+
+// ---- Response parsing ----
+
+function parseResponse(cmd, lines) {
+  const base = cmd.split(' ')[0];
+  if (base === 'status') parseStatus(lines);
+  else if (base === 'list') parseApList(lines);
+  else if (base === 'stations') parseStaList(lines);
+  else if (base === 'blelist') parseBleList(lines);
+}
+
+function parseStatus(lines) {
+  for (const l of lines) {
+    let m = l.match(/WiFi scan: (\w+) \| BLE scan: (\w+) \| deauth: (\w+)\s*(\d*)/);
+    if (m) {
+      wifiOn = m[1] === 'on';
+      bleOn = m[2] === 'on';
+      const active = m[3] === 'ACTIVE';
+      $('statMode').textContent = active ? 'DEAUTH'
+        : (wifiOn && bleOn) ? 'WIFI+BLE'
+        : wifiOn ? 'WIFI SCAN'
+        : bleOn ? 'BLE SCAN'
+        : 'idle';
+      $('btnBle').textContent = bleOn ? 'BLE Scan: on' : 'BLE Scan';
+      $('deauthBanner').classList.toggle('active', active);
+      if (active) $('deauthText').textContent = m[4] + 's remaining';
+    }
+    m = l.match(/Deauth armed: (\w+) \| selected AP: (-?\d+) \| logging: (\w+)/);
+    if (m) {
+      armed = m[1] === 'yes';
+      $('statLog').textContent = m[3];
+      $('btnLog').textContent = 'Log: ' + m[3];
+      updateArmUi();
+    }
+    m = l.match(/Fuzz: (\w+)\s*(\d*) \| armed: (\w+) \| writable_chars: (\d+) writes: (\d+) errors: (\d+) disc: (\d+) last_err: (\S+)/);
+    if (m) {
+      const fActive = m[1] === 'ACTIVE';
+      fuzzArmed = m[3] === 'yes';
+      const lastErr = m[8];
+      $('statFuzz').textContent = fActive
+        ? `${m[2]}s · w${m[5]} e${m[6]} d${m[7]}` + (lastErr !== '-' ? ` · ${lastErr}` : '')
+        : (fuzzArmed ? 'armed' : 'off');
+      $('statFuzz').title = lastErr !== '-' ? ('last write error: ' + lastErr) : '';
+      updateArmUi();
+    }
+    m = l.match(/BLE spam: (\w+) \| flavor: (\S+) \| detections: (\d+) \| live: (\d+)ads\/(\d+)MACs/);
+    if (m) {
+      const detected = m[1] === 'DETECTED';
+      const flavor = m[2], dets = m[3], ads = m[4], macs = m[5];
+      // "clear" must only mean "watching and quiet". If the BLE scan is off the
+      // detector receives nothing, so say so rather than implying all-clear.
+      $('statSpam').textContent = detected ? `⚠ ${flavor}`
+        : !bleOn ? 'scan off'
+        : (dets > 0 ? `clear (${dets} seen)` : 'clear');
+      $('statSpam').style.color = detected ? '' : (!bleOn ? 'var(--text-dim)' : '');
+      $('spamTile').classList.toggle('alert', detected); // flash red while an attack is in range
+      $('statSpam').title = !bleOn && !detected ? 'BLE scan is off — click "BLE Scan" so the detector receives advertisements' : '';
+      $('spamBanner').classList.toggle('active', detected);
+      if (detected) $('spamText').textContent =
+        `${flavor} — ${ads} pairing ads from ${macs} rotating MACs in the last window (${dets} detection${dets === '1' ? '' : 's'} this session)`;
+    }
+    m = l.match(/Debug: ch=(\d+) total_pkts=(\d+) mgmt=(\d+) data=(\d+) beacon\/probe=(\d+)/);
+    if (m) {
+      $('statCh').textContent = m[1];
+      $('statPkts').textContent = m[2];
+    }
+  }
+}
+
+function rssiClass(rssi) {
+  if (rssi >= -60) return 'rssi-strong';
+  if (rssi >= -75) return 'rssi-mid';
+  return 'rssi-weak';
+}
+
+let lastApRows = [];
+
+// While the user is focused inside a table (typing a duration, on a button),
+// skip re-rendering it so auto-refresh doesn't fight the interaction.
+function tableHasFocus(tableId) {
+  const el = document.activeElement;
+  return !!(el && $(tableId).contains(el));
+}
+// Preserve per-row <input> values across a re-render, keyed by stable id.
+function captureInputs(tableId) {
+  const vals = {};
+  $(tableId).querySelectorAll('input[id]').forEach(i => { vals[i.id] = i.value; });
+  return vals;
+}
+function restoreInputs(vals) {
+  for (const id in vals) { const el = document.getElementById(id); if (el) el.value = vals[id]; }
+}
+
+function parseApList(lines) {
+  const rows = [];
+  for (const l of lines) {
+    const m = l.match(/^\s*\[(\d+)\]\s+(.+?)\s+([0-9A-Fa-f:]{17})\s+ch(\d+)\s+rssi(-?\d+)\s+(enc|open)\s*$/);
+    if (m) {
+      rows.push({ idx: +m[1], ssid: m[2].trim(), bssid: m[3], ch: +m[4], rssi: +m[5], sec: m[6] });
+    }
+  }
+  rows.sort((a, b) => b.rssi - a.rssi); // strongest (closest) signal first
+  lastApRows = rows;
+  $('statAp').textContent = rows.length;
+  $('apCountLabel').textContent = rows.length ? `(${rows.length})` : '';
+  const tbody = $('apTable').querySelector('tbody');
+  if (tableHasFocus('apTable')) return; // don't clobber active interaction
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">No APs found yet. Try "Start Scan" and wait a few seconds.</td></tr>';
+    return;
+  }
+  const savedInputs = captureInputs('apTable');
+  tbody.innerHTML = rows.map(r => {
+    const is24 = r.ch >= 1 && r.ch <= 14;
+    const band = is24 ? '2.4G' : '5G';
+    const bandCls = is24 ? 'band-24' : 'band-5';
+    return `
+    <tr>
+      <td>${r.idx}</td>
+      <td>${escapeHtml(r.ssid) || '<span class="empty">(hidden)</span>'}</td>
+      <td class="mac">${r.bssid}</td>
+      <td>${r.ch}</td>
+      <td class="${bandCls}">${band}</td>
+      <td class="${rssiClass(r.rssi)}">${r.rssi}</td>
+      <td class="${r.sec === 'open' ? 'tag-open' : 'tag-enc'}">${r.sec}</td>
+      <td>
+        <div class="row-actions">
+          <input type="number" min="1" max="60" value="20" id="dur-${r.idx}" title="seconds">
+          <button class="danger" onclick="deauthAp(${r.idx})" ${armed ? '' : 'disabled title="Arm deauth first"'}>Deauth</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+  restoreInputs(savedInputs);
+}
+
+function parseStaList(lines) {
+  const rows = [];
+  for (const l of lines) {
+    const m = l.match(/^\s*([0-9A-Fa-f:]{17})\s+->\s+AP\s+([0-9A-Fa-f:]{17})\s+rssi(-?\d+)/);
+    if (m) rows.push({ mac: m[1], ap: m[2], rssi: +m[3] });
+  }
+  rows.sort((a, b) => b.rssi - a.rssi); // strongest (closest) signal first
+  $('statSta').textContent = rows.length;
+  $('staCountLabel').textContent = rows.length ? `(${rows.length})` : '';
+  const tbody = $('staTable').querySelector('tbody');
+  if (tableHasFocus('staTable')) return; // don't clobber active interaction
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">No stations discovered yet.</td></tr>';
+    return;
+  }
+  const savedInputs = captureInputs('staTable');
+  tbody.innerHTML = rows.map(r => {
+    // Unicast deauth needs the AP *index*, but the station line only gives us
+    // the AP's BSSID -- map it back via the last AP list.
+    const apRow = lastApRows.find(a => a.bssid.toUpperCase() === r.ap.toUpperCase());
+    const durId = 'sdur-' + r.mac.replace(/:/g, ''); // stable per-MAC id (survives sort)
+    let deauthCell;
+    if (!apRow) {
+      deauthCell = '<span class="empty" title="This station\'s AP is not in the current AP list -- click Refresh Lists.">AP not listed</span>';
+    } else {
+      const dis = armed ? '' : 'disabled title="Arm deauth first"';
+      deauthCell =
+        `<div class="row-actions">
+           <input type="number" min="1" max="60" value="20" id="${durId}" title="seconds">
+           <button class="danger" onclick="deauthStation(${apRow.idx}, '${r.mac}')" ${dis}>Deauth</button>
+         </div>`;
+    }
+    return `
+    <tr>
+      <td class="mac">${r.mac}</td>
+      <td class="mac">${r.ap}</td>
+      <td class="${rssiClass(r.rssi)}">${r.rssi}</td>
+      <td>${deauthCell}</td>
+    </tr>`;
+  }).join('');
+  restoreInputs(savedInputs);
+}
+
+function parseBleList(lines) {
+  const rows = [];
+  for (const l of lines) {
+    // "  [0] <name may have spaces> AA:BB:CC:DD:EE:FF rssi-45" -- anchor on the
+    // MAC + rssi so names containing spaces still parse.
+    const m = l.match(/^\s*\[(\d+)\]\s+(.*?)\s+([0-9A-Fa-f:]{17})\s+rssi(-?\d+)(?:\s+mfg=(.+?))?\s*$/);
+    // idx is the firmware's own list index -- the fuzzer resolves the target
+    // (and its address type) by this index, so we keep it even though we
+    // re-sort the rows by signal for display. mfg is optional.
+    if (m) rows.push({ idx: +m[1], name: m[2].trim(), addr: m[3], rssi: +m[4], mfg: (m[5] || '').trim() });
+  }
+  rows.sort((a, b) => b.rssi - a.rssi); // strongest (closest) signal first
+  $('statBle').textContent = rows.length;
+  $('bleCountLabel').textContent = rows.length ? `(${rows.length})` : '';
+  const tbody = $('bleTable').querySelector('tbody');
+  if (tableHasFocus('bleTable')) return; // don't clobber a duration field mid-type
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">No BLE devices found yet. Give it a few seconds after starting the scan.</td></tr>';
+    return;
+  }
+  const saved = captureInputs('bleTable');
+  tbody.innerHTML = rows.map(r => {
+    const dis = fuzzArmed ? '' : 'disabled title="Arm fuzzing first"';
+    return `
+    <tr>
+      <td>${(r.name && r.name !== '(no name)') ? escapeHtml(r.name) : '<span class="empty">(no name)</span>'}</td>
+      <td class="mac">${r.addr}</td>
+      <td class="${rssiClass(r.rssi)}">${r.rssi}</td>
+      <td>${r.mfg ? escapeHtml(r.mfg) : '<span class="empty">—</span>'}</td>
+      <td>
+        <input id="fdur-${r.idx}" type="number" min="1" max="120" value="30" style="width:52px;" title="fuzz duration (s)">
+        <button class="danger" onclick="fuzzBle(${r.idx})" ${dis}>Fuzz</button>
+      </td>
+    </tr>`;
+  }).join('');
+  restoreInputs(saved);
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---- UI actions ----
+
+window.deauthAp = async function (idx) {
+  if (!armed) { alert('Arm deauth first (check the authorization box, then click "Arm Deauth").'); return; }
+  const row = lastApRows.find(r => r.idx === idx);
+  const durEl = $('dur-' + idx);
+  const dur = Math.max(1, Math.min(60, +durEl.value || 20));
+  const label = row ? `${row.ssid || '(hidden)'} (${row.bssid})` : `AP #${idx}`;
+  const ok = confirm(
+    `Send deauth to ALL clients of ${label} for ${dur}s?\n\n` +
+    `Only proceed if you own or are explicitly authorized to test this network.`
+  );
+  if (!ok) return;
+  await sendCommand(`deauth ${idx} ${dur}`);
+};
+
+window.deauthStation = async function (apIdx, mac) {
+  if (!armed) { alert('Arm deauth first (check the authorization box, then click "Arm Deauth").'); return; }
+  const durEl = $('sdur-' + mac.replace(/:/g, ''));
+  const dur = Math.max(1, Math.min(60, +(durEl && durEl.value) || 20));
+  const ok = confirm(
+    `Send a targeted (unicast) deauth to station ${mac} on AP #${apIdx} for ${dur}s?\n\n` +
+    `This hits the client and the AP in both directions. Only proceed if you own ` +
+    `or are explicitly authorized to test this network.`
+  );
+  if (!ok) return;
+  await sendCommand(`deauth ${apIdx} ${mac} ${dur}`);
+};
+
+window.fuzzBle = async function (idx) {
+  if (!fuzzArmed) { alert('Arm fuzzing first (check the authorization box, then click "Arm Fuzz").'); return; }
+  const durEl = $('fdur-' + idx);
+  const dur = Math.max(1, Math.min(120, +(durEl && durEl.value) || 30));
+  const ok = confirm(
+    `Fuzz the GATT characteristics of BLE device #${idx} for up to ${dur}s?\n\n` +
+    `This connects to the device and writes malformed data to every writable ` +
+    `characteristic. It can crash, hang, or corrupt the target. Only proceed if ` +
+    `you own or are explicitly authorized to test this device.`
+  );
+  if (!ok) return;
+  await sendCommand(`fuzz ${idx} ${dur}`);
+};
+
+$('btnConnect').addEventListener('click', connect);
+$('btnDisconnect').addEventListener('click', disconnect);
+$('btnScan').addEventListener('click', () => sendCommand('scan'));
+$('btnStop').addEventListener('click', () => sendCommand('stop'));
+$('btnBle').addEventListener('click', async () => {
+  await sendCommand('ble');
+  bleOn = true;
+  $('btnBle').textContent = 'BLE Scan: on';
+  await sendCommand('blelist'); // seed the table; status poll keeps it fresh
+});
+$('btnRefresh').addEventListener('click', async () => {
+  await sendCommand('list');
+  await sendCommand('stations');
+  await sendCommand('blelist');
+});
+$('btnAuto').addEventListener('click', () => {
+  autoRefresh = !autoRefresh;
+  $('btnAuto').textContent = 'Auto-refresh: ' + (autoRefresh ? 'on' : 'off');
+});
+$('btnLog').addEventListener('click', async () => {
+  const turningOn = $('btnLog').textContent.includes('off');
+  await sendCommand('log ' + (turningOn ? 'on' : 'off'));
+  // Reflect immediately rather than waiting on the next 2s status poll.
+  $('btnLog').textContent = 'Log: ' + (turningOn ? 'on' : 'off');
+});
+$('btnArm').addEventListener('click', async () => {
+  if (!$('chkAuthorized').checked) return;
+  const ok = confirm('Arm deauth for this session? Only target networks/devices you own or are authorized to test.');
+  if (!ok) return;
+  await sendCommand('enable-deauth');
+  armed = true;
+  updateArmUi();
+  // Re-render both tables so per-AP and per-station deauth buttons enable.
+  await sendCommand('list');
+  await sendCommand('stations');
+});
+$('btnArmFuzz').addEventListener('click', async () => {
+  if (!$('chkAuthorized').checked) return;
+  const ok = confirm('Arm BLE GATT fuzzing for this session? Only target devices you own or are authorized to test.');
+  if (!ok) return;
+  await sendCommand('enable-fuzz');
+  fuzzArmed = true;
+  updateArmUi();
+  await sendCommand('blelist'); // re-render so per-device Fuzz buttons enable
+});
+$('btnToggleConsole').addEventListener('click', () => {
+  const hidden = consoleEl.style.display === 'none';
+  consoleEl.style.display = hidden ? 'block' : 'none';
+  $('btnToggleConsole').textContent = hidden ? 'hide' : 'show';
+});
+$('btnCopyConsole').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(consoleEl.textContent);
+    const btn = $('btnCopyConsole');
+    const orig = btn.textContent;
+    btn.textContent = 'copied!';
+    setTimeout(() => { btn.textContent = orig; }, 1200);
+  } catch (e) {
+    alert('Clipboard copy failed -- select the text manually instead.');
+  }
+});
+$('btnClearConsole').addEventListener('click', () => {
+  consoleEl.textContent = '';
+});
+$('btnSend').addEventListener('click', sendFromInput);
+$('cmdInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendFromInput(); });
+function sendFromInput() {
+  const v = $('cmdInput').value.trim();
+  if (!v) return;
+  sendCommand(v);
+  $('cmdInput').value = '';
+}
+</script>
+</body>
+</html>
