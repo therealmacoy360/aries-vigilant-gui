@@ -194,12 +194,57 @@
 
   .empty { color: var(--text-dim); font-style: italic; }
   .footnote { color: var(--text-dim); font-size: 10.5px; margin-top: 16px; line-height: 1.5; }
+
+  /* History / presence (base-station mode) */
+  #alertFeed { max-height: 220px; overflow-y: auto; font-size: 11.5px; }
+  .alert-item { padding: 3px 0; border-bottom: 1px solid var(--panel-border); }
+  .badge { font-size: 9.5px; padding: 1px 6px; border-radius: 8px; letter-spacing: 0.4px; }
+  .badge-new   { background: var(--accent-dim); color: var(--accent); }
+  .badge-back  { background: #234a5c; color: #7fd3ff; }
+  .badge-gone  { background: var(--danger-dim); color: #ff9a9a; }
+  .badge-watch { background: #5c4a23; color: var(--warn); }
+  .ai-label { color: var(--text); }
+  .ai-detail { color: var(--text-dim); }
+  .star { cursor: pointer; color: var(--warn); font-size: 14px; }
+  .present-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 5px; background: var(--panel-border); }
+  .present-dot.on { background: var(--accent); box-shadow: 0 0 5px var(--accent); }
+  .hf-btn { font-size: 10px; }
+  .hf-btn.active { border-color: var(--accent); color: var(--accent); }
+  #timeline svg { background: #000; border-radius: 4px; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--panel-border); margin: 0 0 16px; flex-wrap: wrap; }
+  .tab { background: transparent; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; color: var(--text-dim); padding: 7px 16px; margin-bottom: -1px; }
+  .tab:hover:not(.active) { color: var(--text); border-color: transparent; }
+  .tab.active { color: var(--accent); border-color: var(--panel-border); border-bottom-color: var(--bg); background: var(--panel); }
+  .tab-badge { display: inline-block; min-width: 15px; margin-left: 7px; padding: 0 5px; font-size: 10px; text-align: center; border-radius: 8px; background: var(--panel-border); color: var(--text); }
+  .tab.active .tab-badge { background: var(--accent-dim); color: var(--accent); }
+  #tabBadgeHistory { background: var(--danger); color: #fff; }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+
+  .hist-search { width: 100%; box-sizing: border-box; margin-bottom: 8px; background: #000; color: var(--text); border: 1px solid var(--panel-border); border-radius: 4px; padding: 6px 8px; font-family: var(--mono); font-size: 12px; }
+  .hist-search:focus { outline: none; border-color: var(--accent); }
+  .table-scroll { max-height: 340px; overflow-y: auto; }
+  .table-scroll thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+
+  /* GPS target tagging (companion app only) */
+  .tag-btn { font-size: 12px; padding: 2px 6px; line-height: 1; border-color: var(--panel-border); }
+  .tag-btn.on { border-color: var(--accent); color: var(--accent); }
+  #tabBadgeTags { background: var(--accent-dim); color: var(--accent); }
+  .tag-coords { font-family: var(--mono); font-size: 11px; }
+  #tagToast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--accent); color: var(--text);
+    padding: 9px 16px; border-radius: 8px; font-size: 12px; max-width: 92vw; text-align: center;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.5); opacity: 0; pointer-events: none;
+    transition: opacity 0.25s; z-index: 50; }
+  #tagToast.show { opacity: 1; }
 </style>
 </head>
 <body>
 
 <h1>ARIES VIGILANT // WiFi &amp; BLE Sniffer</h1>
-<div class="subtitle">T-Dongle-C5 · Web Serial console — requires Chrome or Edge, opened as a local file (not embedded).</div>
+<div class="subtitle">T-Dongle-C5 console — desktop Web Serial, the Android app (USB-OTG), or over WiFi from an Aries base station (AriesNet). Chrome/Edge recommended.</div>
 
 <div class="topbar">
   <span><span id="connDot" class="dot"></span><span id="connLabel">disconnected</span></span>
@@ -241,6 +286,15 @@
   </div>
 </div>
 
+<div class="tabs">
+  <button class="tab active" data-tab="wifi">WiFi<span class="tab-badge" id="tabBadgeWifi" style="display:none"></span></button>
+  <button class="tab" data-tab="ble">BLE<span class="tab-badge" id="tabBadgeBle" style="display:none"></span></button>
+  <button class="tab" data-tab="history">History<span class="tab-badge" id="tabBadgeHistory" style="display:none"></span></button>
+  <button class="tab" id="tabTags" data-tab="tags" style="display:none">Tags<span class="tab-badge" id="tabBadgeTags" style="display:none"></span></button>
+  <button class="tab" data-tab="console">Console</button>
+</div>
+
+<div class="tab-pane active" id="tab-wifi">
 <div class="grid">
   <div class="panel">
     <h2>Access Points <span id="apCountLabel"></span></h2>
@@ -258,16 +312,72 @@
     </table>
   </div>
 </div>
+</div>
 
-<div class="panel" style="margin-top:16px;">
+<div class="tab-pane" id="tab-ble">
+<div class="panel">
   <h2>BLE Devices <span id="bleCountLabel"></span></h2>
   <table id="bleTable">
     <thead><tr><th>Name</th><th>Address</th><th>RSSI</th><th>Mfr</th><th>Fuzz</th></tr></thead>
     <tbody><tr><td colspan="5" class="empty">Click "BLE Scan" to discover nearby Bluetooth LE devices.</td></tr></tbody>
   </table>
 </div>
+</div>
 
-<div class="panel" style="margin-top:16px;">
+<div class="tab-pane" id="tab-history">
+<div id="historyPlaceholder" class="panel"><span class="empty">Device history &amp; presence alerts appear here when the page is served by an Aries base station running <code>--history</code> — not in direct dongle mode.</span></div>
+<div id="historySection" style="display:none;">
+  <div class="grid" style="margin-top:16px;">
+    <div class="panel">
+      <h2>Presence Alerts <span id="alertCount" class="mac"></span>
+        <button id="btnClearAlerts" style="font-size:10px;">clear view</button>
+      </h2>
+      <div id="alertFeed"><div class="empty">No alerts yet.</div></div>
+    </div>
+    <div class="panel">
+      <h2>RSSI Timeline <span id="tlLabel" class="mac"></span></h2>
+      <div id="timeline"><div class="empty">Click "chart" on a device below to see its RSSI over time.</div></div>
+    </div>
+  </div>
+  <div class="panel" style="margin-top:16px;">
+    <h2>History <span id="histCount" class="mac"></span>
+      <span>
+        <button id="histFilterAll" class="hf-btn active">all</button>
+        <button id="histFilterPresent" class="hf-btn">present</button>
+        <button id="histFilterWatched" class="hf-btn">watched</button>
+      </span>
+    </h2>
+    <input id="histSearch" class="hist-search" placeholder="search name, SSID, or MAC…">
+    <div class="table-scroll">
+      <table id="histTable">
+        <thead><tr><th>★</th><th>Kind</th><th>Name / SSID</th><th>Address</th><th>Seen</th><th>First</th><th>Last</th><th>RSSI</th><th></th></tr></thead>
+        <tbody><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="tab-pane" id="tab-tags">
+<div class="panel">
+  <h2>GPS Tags <span id="tagsCount" class="mac"></span>
+    <span>
+      <button id="btnCopyTags" style="font-size:10px;">copy GeoJSON</button>
+      <button id="btnClearTags" style="font-size:10px;">clear all</button>
+    </span>
+  </h2>
+  <p class="empty" style="margin:0 0 8px;">Tag a target's location with the <b>📍</b> button on any AP, station, BLE, or history row. Positions come from this phone's GPS and are saved on this device.</p>
+  <div class="table-scroll">
+    <table id="tagsTable">
+      <thead><tr><th>Kind</th><th>Label</th><th>Address</th><th>Location</th><th>When</th><th></th></tr></thead>
+      <tbody><tr><td colspan="6" class="empty">No tags yet.</td></tr></tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<div class="tab-pane" id="tab-console">
+<div class="panel">
   <h2>Console
     <span>
       <button id="btnCopyConsole" style="font-size:10px;">copy all</button>
@@ -281,6 +391,7 @@
     <button id="btnSend" disabled>Send</button>
   </div>
 </div>
+</div>
 
 <div class="footnote">
   Only run deauth against networks and devices you own or are explicitly authorized to test.
@@ -290,17 +401,28 @@
   judgment and authorization.
 </div>
 
+<div id="tagToast"></div>
+
 <script>
 'use strict';
 
 let port, reader;
-// Unified connection handle. On desktop we use Web Serial; on Android (which
-// has no Web Serial) we use WebUSB against the ESP32-C5's CDC-ACM interface.
-// Both expose the same { kind, write(u8), close() } shape so the rest of the
-// app is transport-agnostic. Append ?usb to the URL to force the WebUSB path.
+// Unified connection handle. Four interchangeable transports:
+//   'serial'  desktop Web Serial (local file, Chrome/Edge)
+//   'usb'     Android Chrome WebUSB against the ESP32-C5's CDC-ACM interface
+//   'android' native Android app's usb-serial bridge (window.AndroidSerial)
+//   'net'     "AriesNet" -- a WebSocket to a base station (e.g. a Raspberry Pi
+//             the dongle is docked to). The base relays bytes <-> the dongle's
+//             serial, so the phone/laptop drives it over WiFi with no OTG cable
+//             or WebUSB claim. See aries-vigilant-base/ for the server side.
+// All expose the same { kind, write(u8), close() } shape so the rest of the app
+// is transport-agnostic. Overrides: ?usb forces WebUSB; ?net[=host] forces
+// AriesNet (host defaults to the page's own origin).
 let transport = null;
 let usbDevice = null, usbEpIn = null, usbEpOut = null, usbCtrlNum = null;
+let netWs = null;
 const forceUsb = new URLSearchParams(location.search).has('usb');
+const netParam = new URLSearchParams(location.search).get('net');
 let lineBuffer = '';
 let cmdQueue = [];
 let cmdBusy = false;
@@ -367,12 +489,24 @@ $('chkAuthorized').addEventListener('change', updateArmUi);
 
 async function connect() {
   try {
-    if (!forceUsb && 'serial' in navigator) {
-      await connectSerial();
+    if (forceUsb && 'usb' in navigator) {
+      await connectUsb();                // ?usb testing override
+    } else if (netParam !== null) {
+      await connectAriesNet(netParam || location.host); // ?net[=host] override
+    } else if (location.protocol === 'http:' || location.protocol === 'https:') {
+      // The page was served (not opened as file://) -- it came from a base
+      // station, so talk to it over AriesNet. This is the docked path: open the
+      // Pi's URL from any browser on its WiFi and it "just connects".
+      await connectAriesNet(location.host);
+    } else if (window.AndroidSerial) {   // native Android app, dongle on the phone
+      await connectAndroid();
+    } else if ('serial' in navigator) {
+      await connectSerial();             // desktop Web Serial
     } else if ('usb' in navigator) {
-      await connectUsb();
+      await connectUsb();                // Android Chrome WebUSB (may hit CDC wall)
     } else {
-      alert('No supported transport. Use desktop Chrome/Edge (Web Serial) or Android Chrome (WebUSB).');
+      alert('No supported transport. Open your base station\'s URL over WiFi (AriesNet), ' +
+            'or use desktop Chrome/Edge (Web Serial), the Android app, or Android Chrome (WebUSB).');
       return;
     }
     setConnected(true);
@@ -380,6 +514,67 @@ async function connect() {
   } catch (e) {
     log('[connect failed] ' + e.message);
   }
+}
+
+// --- AriesNet: WebSocket to a base station that owns the dongle's serial ---
+// The base (aries-vigilant-base/bridge.py) relays raw bytes both ways, so this
+// transport is a thin pipe -- the exact same CLI/parsing path as the others.
+function connectAriesNet(host) {
+  return new Promise((resolve, reject) => {
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = wsProto + '//' + host + '/ws';
+    let settled = false;
+    const decoder = new TextDecoder();
+    let ws;
+    try { ws = new WebSocket(url); } catch (e) { reject(e); return; }
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => { netWs = ws; settled = true; resolve(); };
+    ws.onmessage = (ev) => {
+      const str = typeof ev.data === 'string' ? ev.data : decoder.decode(ev.data, { stream: true });
+      handleIncoming(str);
+    };
+    ws.onerror = () => {
+      if (!settled) { settled = true; reject(new Error('could not reach the Aries base station at ' + url)); }
+    };
+    ws.onclose = () => {
+      if (transport && transport.kind === 'net') {
+        transport = null; netWs = null; setConnected(false); log('[disconnected]');
+      }
+    };
+    transport = {
+      kind: 'net',
+      write: async (u8) => ws.send(u8),
+      close: async () => { try { ws.close(); } catch (e) {} netWs = null; },
+    };
+  });
+}
+
+// --- Native Android app bridge ---
+// window.AndroidSerial is injected by the companion app's WebView. It drives the
+// dongle's CDC serial via usb-serial-for-android, which (unlike browser WebUSB)
+// CAN claim the CDC device on Android because the app owns it exclusively.
+function connectAndroid() {
+  return new Promise((resolve, reject) => {
+    window.onAndroidSerialData = (str) => handleIncoming(str);
+    window.onAndroidSerialClosed = () => {
+      if (transport && transport.kind === 'android') {
+        transport = null; setConnected(false); log('[disconnected]');
+      }
+    };
+    window.onAndroidSerialConnected = (ok, msg) => {
+      if (ok) {
+        transport = {
+          kind: 'android',
+          write: async (u8) => { AndroidSerial.write(String.fromCharCode.apply(null, u8)); },
+          close: async () => { try { AndroidSerial.close(); } catch (e) {} },
+        };
+        resolve();
+      } else {
+        reject(new Error(msg || 'USB connect failed'));
+      }
+    };
+    try { AndroidSerial.connect(); } catch (e) { reject(e); }
+  });
 }
 
 async function disconnect() {
@@ -628,6 +823,7 @@ function rssiClass(rssi) {
 }
 
 let lastApRows = [];
+let lastBleRows = [];
 
 // While the user is focused inside a table (typing a duration, on a button),
 // skip re-rendering it so auto-refresh doesn't fight the interaction.
@@ -679,6 +875,7 @@ function parseApList(lines) {
       <td class="${r.sec === 'open' ? 'tag-open' : 'tag-enc'}">${r.sec}</td>
       <td>
         <div class="row-actions">
+          ${tagBtn('ap', r.bssid)}
           <input type="number" min="1" max="60" value="20" id="dur-${r.idx}" title="seconds">
           <button class="danger" onclick="deauthAp(${r.idx})" ${armed ? '' : 'disabled title="Arm deauth first"'}>Deauth</button>
         </div>
@@ -715,17 +912,15 @@ function parseStaList(lines) {
     } else {
       const dis = armed ? '' : 'disabled title="Arm deauth first"';
       deauthCell =
-        `<div class="row-actions">
-           <input type="number" min="1" max="60" value="20" id="${durId}" title="seconds">
-           <button class="danger" onclick="deauthStation(${apRow.idx}, '${r.mac}')" ${dis}>Deauth</button>
-         </div>`;
+        `<input type="number" min="1" max="60" value="20" id="${durId}" title="seconds">
+           <button class="danger" onclick="deauthStation(${apRow.idx}, '${r.mac}')" ${dis}>Deauth</button>`;
     }
     return `
     <tr>
       <td class="mac">${r.mac}</td>
       <td class="mac">${r.ap}</td>
       <td class="${rssiClass(r.rssi)}">${r.rssi}</td>
-      <td>${deauthCell}</td>
+      <td><div class="row-actions">${tagBtn('sta', r.mac)}${deauthCell}</div></td>
     </tr>`;
   }).join('');
   restoreInputs(savedInputs);
@@ -743,6 +938,7 @@ function parseBleList(lines) {
     if (m) rows.push({ idx: +m[1], name: m[2].trim(), addr: m[3], rssi: +m[4], mfg: (m[5] || '').trim() });
   }
   rows.sort((a, b) => b.rssi - a.rssi); // strongest (closest) signal first
+  lastBleRows = rows;
   $('statBle').textContent = rows.length;
   $('bleCountLabel').textContent = rows.length ? `(${rows.length})` : '';
   const tbody = $('bleTable').querySelector('tbody');
@@ -761,8 +957,11 @@ function parseBleList(lines) {
       <td class="${rssiClass(r.rssi)}">${r.rssi}</td>
       <td>${r.mfg ? escapeHtml(r.mfg) : '<span class="empty">—</span>'}</td>
       <td>
-        <input id="fdur-${r.idx}" type="number" min="1" max="120" value="30" style="width:52px;" title="fuzz duration (s)">
-        <button class="danger" onclick="fuzzBle(${r.idx})" ${dis}>Fuzz</button>
+        <div class="row-actions">
+          ${tagBtn('ble', r.addr)}
+          <input id="fdur-${r.idx}" type="number" min="1" max="120" value="30" style="width:52px;" title="fuzz duration (s)">
+          <button class="danger" onclick="fuzzBle(${r.idx})" ${dis}>Fuzz</button>
+        </div>
       </td>
     </tr>`;
   }).join('');
@@ -888,6 +1087,342 @@ function sendFromInput() {
   sendCommand(v);
   $('cmdInput').value = '';
 }
+
+// ---- History / presence feed (base-station mode only) ----
+// These read the bridge's HTTP API (aries-vigilant-base). They only light up
+// when the page was served by a base station running --history; opened as a
+// local file straight to the dongle, there's no API and the section stays hidden.
+let histAvailable = false;
+let lastAlertId = 0;
+let histFilter = 'all';
+
+async function apiGet(path) {
+  const r = await fetch(path, { cache: 'no-store' });
+  if (!r.ok) throw new Error(path + ' -> ' + r.status);
+  return r.json();
+}
+
+async function initHistory() {
+  if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+  try {
+    const s = await apiGet('/api/summary');
+    if (!s || !s.history) return;
+  } catch (e) { return; }
+  histAvailable = true;
+  $('historyPlaceholder').style.display = 'none';
+  $('historySection').style.display = 'block';
+  loadDevices();
+  pollAlerts();
+  setInterval(pollAlerts, 4000);
+  setInterval(() => { if (histAvailable) loadDevices(); }, 15000);
+}
+
+function timeAgo(ts) {
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'm';
+  if (s < 86400) return Math.floor(s / 3600) + 'h';
+  return Math.floor(s / 86400) + 'd';
+}
+
+const ALERT_BADGE = {
+  'new': ['NEW', 'badge-new'], 'returned': ['BACK', 'badge-back'],
+  'departed': ['GONE', 'badge-gone'], 'watch-appear': ['WATCH+', 'badge-watch'],
+  'watch-depart': ['WATCH-', 'badge-watch'],
+};
+
+async function pollAlerts() {
+  if (!histAvailable) return;
+  let rows;
+  try { rows = await apiGet('/api/alerts?since=' + lastAlertId); } catch (e) { return; }
+  if (!rows.length) return;
+  const feed = $('alertFeed');
+  const empty = feed.querySelector('.empty');
+  if (empty) feed.innerHTML = '';
+  // API returns newest-first; reverse so we insert oldest→newest, newest ends on top.
+  rows.slice().reverse().forEach(a => {
+    if (a.id > lastAlertId) lastAlertId = a.id;
+    const [txt, cls] = ALERT_BADGE[a.kind] || [a.kind, 'badge-new'];
+    const div = document.createElement('div');
+    div.className = 'alert-item';
+    div.innerHTML = `<span class="badge ${cls}">${txt}</span> ` +
+      `<span class="ai-label">${escapeHtml(a.label || a.addr)}</span> ` +
+      `<span class="mac">${a.addr}</span> ` +
+      `<span class="ai-detail">${escapeHtml(a.detail || '')} · ${timeAgo(a.ts)} ago</span>`;
+    feed.insertBefore(div, feed.firstChild);
+  });
+  // Flag unread alerts on the History tab when you're looking elsewhere.
+  if (activeTab() !== 'history') { unreadAlerts += rows.length; updateHistoryBadge(); }
+  while (feed.children.length > 60) feed.removeChild(feed.lastChild);
+}
+
+let histDevices = [];
+
+async function loadDevices() {
+  let q = '/api/devices';
+  if (histFilter === 'present') q += '?present=1';
+  else if (histFilter === 'watched') q += '?watched=1';
+  try { histDevices = await apiGet(q); } catch (e) { return; }
+  renderDevices();
+}
+
+function renderDevices() {
+  const term = ($('histSearch').value || '').trim().toLowerCase();
+  let rows = histDevices;
+  if (term) rows = rows.filter(d =>
+    (d.ssid || d.name || '').toLowerCase().includes(term) ||
+    d.addr.toLowerCase().includes(term) ||
+    d.kind.toLowerCase().includes(term));
+  $('histCount').textContent = term
+    ? `(${rows.length} of ${histDevices.length})`
+    : (histDevices.length ? `(${histDevices.length})` : '');
+  const tb = $('histTable').querySelector('tbody');
+  if (!rows.length) {
+    tb.innerHTML = '<tr><td colspan="9" class="empty">' +
+      (term ? 'No devices match “' + escapeHtml(term) + '”.' : 'No devices recorded yet. Start a scan.') +
+      '</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(d => {
+    const label = d.ssid || d.name || (d.kind === 'sta' ? '(station)' : '—');
+    const star = d.watched ? '★' : '☆';
+    const dot = d.present ? '<span class="present-dot on"></span>' : '<span class="present-dot"></span>';
+    const rssi = (d.last_rssi === null || d.last_rssi === undefined) ? '—' : d.last_rssi;
+    return `<tr>
+      <td><span class="star" onclick="histToggleWatch('${d.kind}','${d.addr}',${d.watched ? 0 : 1})">${star}</span></td>
+      <td>${dot}${d.kind.toUpperCase()}</td>
+      <td>${escapeHtml(label)}</td>
+      <td class="mac">${d.addr}</td>
+      <td>${d.times_seen}</td>
+      <td title="${new Date(d.first_seen * 1000).toLocaleString()}">${timeAgo(d.first_seen)}</td>
+      <td title="${new Date(d.last_seen * 1000).toLocaleString()}">${timeAgo(d.last_seen)}</td>
+      <td class="${rssiClass(rssi === '—' ? -100 : rssi)}">${rssi}</td>
+      <td><button style="font-size:10px;" onclick="histShowTimeline('${d.kind}','${d.addr}')">chart</button>${tagBtn(d.kind, d.addr)}</td>
+    </tr>`;
+  }).join('');
+}
+
+window.histToggleWatch = async function (kind, addr, on) {
+  try {
+    await fetch('/api/watch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, addr, on: !!on }),
+    });
+  } catch (e) { /* best effort */ }
+  loadDevices();
+};
+
+window.histShowTimeline = async function (kind, addr) {
+  let d;
+  try { d = await apiGet('/api/device?kind=' + kind + '&addr=' + encodeURIComponent(addr)); }
+  catch (e) { return; }
+  $('tlLabel').textContent = (d.ssid || d.name || addr);
+  const pts = d.timeline || [];
+  const el = $('timeline');
+  if (pts.length < 2) { el.innerHTML = '<div class="empty">Not enough samples yet — give it a few minutes of scanning.</div>'; return; }
+  el.innerHTML = sparkline(pts);
+};
+
+function sparkline(pts) {
+  const W = 300, H = 90, pad = 8;
+  const rs = pts.map(p => (p.rssi == null ? -100 : p.rssi));
+  const t0 = pts[0].ts, t1 = pts[pts.length - 1].ts || t0 + 1;
+  const rlo = Math.min(-90, Math.min.apply(null, rs));
+  const rhi = Math.max(-30, Math.max.apply(null, rs));
+  const x = t => pad + (W - 2 * pad) * ((t - t0) / ((t1 - t0) || 1));
+  const y = r => pad + (H - 2 * pad) * (1 - ((r - rlo) / ((rhi - rlo) || 1)));
+  const path = pts.map((p, i) => (i ? 'L' : 'M') + x(p.ts).toFixed(1) + ' ' + y(rs[i]).toFixed(1)).join(' ');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px">
+    <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+    <text x="3" y="11" fill="#7f9c78" font-size="9">${rhi} dBm</text>
+    <text x="3" y="${H - 3}" fill="#7f9c78" font-size="9">${rlo} dBm</text>
+  </svg>`;
+}
+
+['All', 'Present', 'Watched'].forEach(name => {
+  const el = $('histFilter' + name);
+  if (!el) return;
+  el.addEventListener('click', () => {
+    histFilter = name.toLowerCase();
+    document.querySelectorAll('.hf-btn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+    loadDevices();
+  });
+});
+if ($('histSearch')) $('histSearch').addEventListener('input', renderDevices);
+if ($('btnClearAlerts')) {
+  $('btnClearAlerts').addEventListener('click', () => {
+    $('alertFeed').innerHTML = '<div class="empty">No alerts yet.</div>';
+  });
+}
+
+// ---- GPS target tagging (companion app only) ----
+// window.AndroidGps is injected by the Aries Vigilant Android app; it returns the
+// phone's current location on demand. Tagging is explicit and per-target (the 📍
+// button on a row) -- never a blanket geotag of every sighting. Tags are stored
+// on this device (localStorage) so they work handheld with no base station.
+// Detected LIVE, not captured at load: Android WebView can inject the AndroidGps
+// bridge a tick after the first script runs, so a load-time snapshot would latch
+// false and hide every pin. Re-checked on each render. The custom User-Agent the
+// app sets is a synchronous, race-free signal too (and covers the docked page).
+function gpsAvailable() { return !!window.AndroidGps || /AriesVigilantApp/.test(navigator.userAgent); }
+let geoTags = [];
+try { geoTags = JSON.parse(localStorage.getItem('ariesGeoTags') || '[]'); } catch (e) { geoTags = []; }
+function saveTags() { try { localStorage.setItem('ariesGeoTags', JSON.stringify(geoTags)); } catch (e) {} }
+function tagKey(kind, addr) { return kind + '|' + String(addr).toUpperCase(); }
+function isTagged(kind, addr) { return geoTags.some(t => tagKey(t.kind, t.addr) === tagKey(kind, addr)); }
+
+// Rendered into each target row's action cell (empty string when not in the app).
+function tagBtn(kind, addr) {
+  if (!gpsAvailable()) return '';
+  const on = isTagged(kind, addr);
+  return `<button class="tag-btn${on ? ' on' : ''}" title="${on ? 'Re-tag' : 'Tag'} this target's GPS location" onclick="tagTarget('${kind}','${addr}')">📍</button>`;
+}
+
+// Resolve a human label for a target from whatever list it came from.
+function lookupLabel(kind, addr) {
+  const A = String(addr).toUpperCase();
+  if (kind === 'ap')  { const r = lastApRows.find(x => x.bssid.toUpperCase() === A); return r ? (r.ssid || '(hidden)') : ''; }
+  if (kind === 'ble') { const r = lastBleRows.find(x => x.addr.toUpperCase() === A); return r ? (r.name || '') : ''; }
+  const h = histDevices.find(x => x.kind === kind && x.addr.toUpperCase() === A);
+  return h ? (h.ssid || h.name || '') : '';
+}
+
+let pendingTag = null;
+window.tagTarget = function (kind, addr) {
+  if (!window.AndroidGps) { showToast('GPS tagging needs the Aries Vigilant Android app (update to the latest build).'); return; }
+  pendingTag = { kind, addr, label: lookupLabel(kind, addr) };
+  showToast('📍 getting GPS fix…');
+  try { AndroidGps.getLocation(); }
+  catch (e) { pendingTag = null; showToast('Could not request location: ' + e.message); }
+};
+
+// Native callback: (ok, latitude, longitude, accuracy_m, message).
+window.onAndroidGps = function (ok, lat, lon, acc, msg) {
+  const p = pendingTag; pendingTag = null;
+  if (!p) return;
+  if (!ok) { showToast('Location failed: ' + (msg || 'unavailable')); return; }
+  geoTags = geoTags.filter(t => tagKey(t.kind, t.addr) !== tagKey(p.kind, p.addr)); // re-tag replaces
+  geoTags.push({ kind: p.kind, addr: p.addr, label: p.label || '', lat, lon, acc, ts: Math.floor(Date.now() / 1000) });
+  saveTags();
+  showToast('📍 Tagged ' + (p.label || p.addr) + '  ' + lat.toFixed(5) + ', ' + lon.toFixed(5) + ' (±' + Math.round(acc) + 'm)');
+  renderTags();
+  refreshTagIndicators();
+};
+
+// Toggle the "tagged" highlight on visible buttons without a full re-render.
+function refreshTagIndicators() {
+  document.querySelectorAll('button.tag-btn').forEach(b => {
+    const m = (b.getAttribute('onclick') || '').match(/tagTarget\('([^']+)','([^']+)'\)/);
+    if (m) b.classList.toggle('on', isTagged(m[1], m[2]));
+  });
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const el = $('tagToast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+}
+
+window.removeTag = function (kind, addr) {
+  geoTags = geoTags.filter(t => tagKey(t.kind, t.addr) !== tagKey(kind, addr));
+  saveTags(); renderTags(); refreshTagIndicators();
+};
+window.mapTag = function (idx) {
+  const t = geoTags[idx]; if (!t) return;
+  if (window.AndroidGps && AndroidGps.openMap) AndroidGps.openMap(t.lat, t.lon, t.label || t.addr);
+};
+
+function tagsGeoJSON() {
+  return JSON.stringify({
+    type: 'FeatureCollection',
+    features: geoTags.map(t => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [t.lon, t.lat] },
+      properties: { label: t.label, kind: t.kind, addr: t.addr, accuracy_m: t.acc, time: new Date(t.ts * 1000).toISOString() },
+    })),
+  }, null, 2);
+}
+
+function renderTags() {
+  setTabBadge('tabBadgeTags', geoTags.length);
+  const cnt = $('tagsCount'); if (cnt) cnt.textContent = geoTags.length ? `(${geoTags.length})` : '';
+  const table = $('tagsTable'); if (!table) return;
+  const tb = table.querySelector('tbody');
+  if (!geoTags.length) { tb.innerHTML = '<tr><td colspan="6" class="empty">No tags yet.</td></tr>'; return; }
+  tb.innerHTML = geoTags.map((t, i) => `<tr>
+    <td>${t.kind.toUpperCase()}</td>
+    <td>${escapeHtml(t.label || '—')}</td>
+    <td class="mac">${t.addr}</td>
+    <td class="tag-coords">${t.lat.toFixed(5)}, ${t.lon.toFixed(5)} <span class="empty">±${Math.round(t.acc)}m</span></td>
+    <td title="${new Date(t.ts * 1000).toLocaleString()}">${timeAgo(t.ts)} ago</td>
+    <td>
+      <button style="font-size:10px;" onclick="mapTag(${i})">map</button>
+      <button style="font-size:10px;" onclick="removeTag('${t.kind}','${t.addr}')">✕</button>
+    </td>
+  </tr>`).join('');
+}
+
+let tagsInited = false;
+function initTags() {
+  if (tagsInited || !gpsAvailable()) return; // reveal once the app bridge/UA is detected
+  tagsInited = true;
+  const tab = $('tabTags'); if (tab) tab.style.display = '';
+  renderTags();
+  const copy = $('btnCopyTags');
+  if (copy) copy.addEventListener('click', async () => {
+    if (!geoTags.length) { showToast('No tags to copy.'); return; }
+    try {
+      await navigator.clipboard.writeText(tagsGeoJSON());
+      const o = copy.textContent; copy.textContent = 'copied!'; setTimeout(() => copy.textContent = o, 1200);
+    } catch (e) { showToast('Clipboard copy failed.'); }
+  });
+  const clr = $('btnClearTags');
+  if (clr) clr.addEventListener('click', () => {
+    if (!geoTags.length) return;
+    if (!confirm('Remove all ' + geoTags.length + ' saved GPS tags from this device?')) return;
+    geoTags = []; saveTags(); renderTags(); refreshTagIndicators();
+  });
+}
+
+// ---- Tabs ----
+let unreadAlerts = 0;
+function activeTab() {
+  const el = document.querySelector('.tab.active');
+  return el ? el.dataset.tab : 'wifi';
+}
+function updateHistoryBadge() {
+  const b = $('tabBadgeHistory');
+  if (!b) return;
+  b.textContent = unreadAlerts;
+  b.style.display = unreadAlerts > 0 ? 'inline-block' : 'none';
+}
+function setTabBadge(id, n) {
+  const b = $(id);
+  if (!b) return;
+  b.textContent = n;
+  b.style.display = n > 0 ? 'inline-block' : 'none';
+}
+function refreshTabBadges() {
+  const num = id => { const n = parseInt($(id).textContent, 10); return isNaN(n) ? 0 : n; };
+  setTabBadge('tabBadgeWifi', num('statAp') + num('statSta'));
+  setTabBadge('tabBadgeBle', num('statBle'));
+  if (!tagsInited) initTags(); // reveal the Tags tab if the app bridge arrived late
+}
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  const name = t.dataset.tab;
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+  if (name === 'history') { unreadAlerts = 0; updateHistoryBadge(); }
+}));
+setInterval(refreshTabBadges, 1500);
+
+initHistory();
+initTags();
 </script>
 </body>
 </html>
