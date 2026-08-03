@@ -295,6 +295,7 @@
     <div class="stat"><span class="label">APs</span><span class="value" id="statAp">—</span></div>
     <div class="stat"><span class="label">Stations</span><span class="value" id="statSta">—</span></div>
     <div class="stat"><span class="label">BLE</span><span class="value" id="statBle">—</span></div>
+    <div class="stat"><span class="label">Probes</span><span class="value" id="statProbe">—</span></div>
     <div class="stat" id="spamTile"><span class="label">Spam Watch</span><span class="value" id="statSpam">—</span></div>
     <div class="stat"><span class="label">Channel</span><span class="value" id="statCh">—</span></div>
     <div class="stat"><span class="label">Packets</span><span class="value" id="statPkts">—</span></div>
@@ -318,6 +319,7 @@
 <div class="tabs">
   <button class="tab active" data-tab="wifi">WiFi<span class="tab-badge" id="tabBadgeWifi" style="display:none"></span></button>
   <button class="tab" data-tab="ble">BLE<span class="tab-badge" id="tabBadgeBle" style="display:none"></span></button>
+  <button class="tab" data-tab="probes">Probes<span class="tab-badge" id="tabBadgeProbes" style="display:none"></span></button>
   <button class="tab" data-tab="history">History<span class="tab-badge" id="tabBadgeHistory" style="display:none"></span></button>
   <button class="tab" id="tabTags" data-tab="tags" style="display:none">Tags<span class="tab-badge" id="tabBadgeTags" style="display:none"></span></button>
   <button class="tab" id="tabFinder" data-tab="finder" style="display:none">Finder<span class="tab-badge" id="tabBadgeFinder" style="display:none"></span></button>
@@ -351,6 +353,25 @@
     <thead><tr><th>Name</th><th>Address</th><th>RSSI</th><th>Mfr</th><th></th></tr></thead>
     <tbody><tr><td colspan="5" class="empty">Click "BLE Scan" to discover nearby Bluetooth LE devices.</td></tr></tbody>
   </table>
+</div>
+</div>
+
+<div class="tab-pane" id="tab-probes">
+<div class="panel">
+  <h2>Probe Requests <span id="probeCountLabel"></span></h2>
+  <p class="empty" style="margin:0 0 8px; font-size:11px; line-height:1.5;">
+    Client devices searching for WiFi. A <b>named</b> SSID is a remembered network the
+    device is asking for (Preferred-Network-List leakage) — useful for spotting your own
+    devices oversharing, or profiling an unknown device. <span class="empty">(searching…)</span>
+    means a wildcard probe with no network named. Needs <b>Start Scan</b> running; MACs are
+    often randomized.</p>
+  <input id="probeSearch" class="hist-search" placeholder="search MAC or SSID…">
+  <div class="table-scroll">
+    <table id="probeTable">
+      <thead><tr><th>Client MAC</th><th>Requested SSID</th><th>RSSI</th><th>Seen</th></tr></thead>
+      <tbody><tr><td colspan="4" class="empty">Start a scan; probe requests from nearby clients appear here.</td></tr></tbody>
+    </table>
+  </div>
 </div>
 </div>
 
@@ -560,6 +581,7 @@ function setConnected(on) {
         if (wifiOn) {
           sendCommand('list', true).catch(() => {});
           sendCommand('stations', true).catch(() => {});
+          sendCommand('probes', true).catch(() => {});
         }
         if (bleOn) sendCommand('blelist', true).catch(() => {});
       }
@@ -851,6 +873,7 @@ function parseResponse(cmd, lines) {
   if (base === 'status') parseStatus(lines);
   else if (base === 'list') parseApList(lines);
   else if (base === 'stations') parseStaList(lines);
+  else if (base === 'probes') parseProbeList(lines);
   else if (base === 'blelist') parseBleList(lines);
 }
 
@@ -870,11 +893,12 @@ function parseStatus(lines) {
       $('deauthBanner').classList.toggle('active', active);
       if (active) $('deauthText').textContent = m[4] + 's remaining';
     }
-    m = l.match(/Deauth armed: (\w+) \| selected AP: (-?\d+) \| logging: (\w+)/);
+    m = l.match(/Deauth armed: (\w+) \| selected AP: (-?\d+) \| logging: (\w+)(?: \| probes: (\d+))?/);
     if (m) {
       armed = m[1] === 'yes';
       $('statLog').textContent = m[3];
       $('btnLog').textContent = 'Log: ' + m[3];
+      if (m[4] !== undefined) $('statProbe').textContent = m[4];
       updateArmUi();
     }
     m = l.match(/BLE spam: (\w+) \| flavor: (\S+) \| detections: (\d+) \| live: (\d+)ads\/(\d+)MACs/);
@@ -910,6 +934,7 @@ function rssiClass(rssi) {
 let lastApRows = [];
 let lastBleRows = [];
 let lastStaRows = [];
+let lastProbeRows = [];
 
 // While the user is focused inside a table (typing a duration, on a button),
 // skip re-rendering it so auto-refresh doesn't fight the interaction.
@@ -1047,6 +1072,44 @@ function parseBleList(lines) {
   restoreInputs(saved);
 }
 
+// Probe requests: "  [i] AA:BB:CC:DD:EE:FF rssi-52 seen12 ssid=NetName"
+// (ssid to end of line; empty = wildcard). One row per (client MAC, SSID).
+function parseProbeList(lines) {
+  const rows = [];
+  for (const l of lines) {
+    const m = l.match(/^\s*\[(\d+)\]\s+([0-9A-Fa-f:]{17})\s+rssi(-?\d+)\s+seen(\d+)\s+ssid=(.*)$/);
+    if (m) rows.push({ mac: m[2], rssi: +m[3], seen: +m[4], ssid: m[5].replace(/\s+$/, '') });
+  }
+  rows.sort((a, b) => b.rssi - a.rssi); // strongest (closest) first
+  lastProbeRows = rows;
+  $('statProbe').textContent = rows.length;
+  $('probeCountLabel').textContent = rows.length ? `(${rows.length})` : '';
+  setTabBadge('tabBadgeProbes', rows.length);
+  renderProbes();
+}
+
+function renderProbes() {
+  const rows = lastProbeRows;
+  const tbody = $('probeTable').querySelector('tbody');
+  const term = ($('probeSearch').value || '').trim().toLowerCase();
+  const shown = term
+    ? rows.filter(r => r.mac.toLowerCase().includes(term) || r.ssid.toLowerCase().includes(term))
+    : rows;
+  if (shown.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" class="empty">${
+      term ? 'No probes match “' + escapeHtml(term) + '”.'
+           : 'Start a scan; probe requests from nearby clients appear here.'}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = shown.map(r => `
+    <tr>
+      <td class="mac">${r.mac}</td>
+      <td>${r.ssid ? '<b>' + escapeHtml(r.ssid) + '</b>' : '<span class="empty">(searching…)</span>'}</td>
+      <td class="${rssiClass(r.rssi)}">${r.rssi}</td>
+      <td>${r.seen}</td>
+    </tr>`).join('');
+}
+
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -1093,6 +1156,7 @@ $('btnBle').addEventListener('click', async () => {
 $('btnRefresh').addEventListener('click', async () => {
   await sendCommand('list');
   await sendCommand('stations');
+  await sendCommand('probes');
   await sendCommand('blelist');
 });
 $('btnAuto').addEventListener('click', () => {
@@ -1318,6 +1382,7 @@ function sparkline(pts) {
   });
 });
 if ($('histSearch')) $('histSearch').addEventListener('input', renderDevices);
+if ($('probeSearch')) $('probeSearch').addEventListener('input', renderProbes);
 if ($('btnClearAlerts')) {
   $('btnClearAlerts').addEventListener('click', () => {
     $('alertFeed').innerHTML = '<div class="empty">No alerts yet.</div>';
@@ -1769,6 +1834,7 @@ function refreshTabBadges() {
   const num = id => { const n = parseInt($(id).textContent, 10); return isNaN(n) ? 0 : n; };
   setTabBadge('tabBadgeWifi', num('statAp') + num('statSta'));
   setTabBadge('tabBadgeBle', num('statBle'));
+  setTabBadge('tabBadgeProbes', num('statProbe'));
   if (!tagsInited) initTags(); // reveal the Tags tab if the app bridge arrived late
   if (!finderInited) initFinder(); // same late-reveal for the Finder tab
 }
