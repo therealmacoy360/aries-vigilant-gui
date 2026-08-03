@@ -239,6 +239,38 @@
     box-shadow: 0 4px 18px rgba(0,0,0,0.5); opacity: 0; pointer-events: none;
     transition: opacity 0.25s; z-index: 50; }
   #tagToast.show { opacity: 1; }
+
+  /* Direction finder + offline map (companion app only) */
+  #tabBadgeFinder { background: var(--accent-dim); color: var(--accent); }
+  .finder-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  @media (min-width: 780px) { .finder-grid { grid-template-columns: 340px 1fr; } }
+  .finder-target { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .finder-target select { flex: 1 1 160px; min-width: 0; }
+  #finderReadout { text-align: center; padding: 10px 4px 4px; }
+  #finderTrend { font-size: 30px; font-weight: 700; letter-spacing: 0.5px; line-height: 1.1; }
+  #finderTrend.warmer { color: #ff5a3c; }
+  #finderTrend.colder { color: #3aa0ff; }
+  #finderTrend.steady { color: var(--muted, #8aa); }
+  #finderTrend.nosig { color: var(--danger); font-size: 18px; }
+  #finderRssi { font-family: var(--mono); font-size: 40px; font-weight: 700; margin: 2px 0; }
+  #finderProx { font-size: 12px; color: var(--muted, #8aa); min-height: 16px; }
+  .signal-bar { height: 16px; border-radius: 8px; background: var(--bg);
+    border: 1px solid var(--panel-border); overflow: hidden; margin: 12px 0 4px; }
+  .signal-fill { height: 100%; width: 0%; transition: width 0.4s, background 0.4s; }
+  .finder-stats { display: flex; justify-content: space-between; font-size: 11px;
+    color: var(--muted, #8aa); font-family: var(--mono); }
+  .find-btn { font-size: 12px; padding: 2px 6px; line-height: 1; border-color: var(--panel-border); }
+  .find-btn.on { border-color: var(--accent); color: var(--accent); }
+  #mapWrap { position: relative; width: 100%; height: 340px; background: var(--bg);
+    border: 1px solid var(--panel-border); border-radius: 8px; overflow: hidden; }
+  #finderMap { display: block; width: 100%; height: 100%; }
+  #mapLegend { position: absolute; left: 8px; bottom: 8px; font-size: 10px;
+    color: var(--muted, #9ab); background: rgba(0,0,0,0.45); padding: 3px 7px;
+    border-radius: 6px; pointer-events: none; }
+  #mapHint { position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; text-align: center; padding: 20px; font-size: 12px;
+    color: var(--muted, #8aa); }
+  .gps-line { font-size: 11px; color: var(--muted, #8aa); font-family: var(--mono); margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -291,6 +323,7 @@
   <button class="tab" data-tab="ble">BLE<span class="tab-badge" id="tabBadgeBle" style="display:none"></span></button>
   <button class="tab" data-tab="history">History<span class="tab-badge" id="tabBadgeHistory" style="display:none"></span></button>
   <button class="tab" id="tabTags" data-tab="tags" style="display:none">Tags<span class="tab-badge" id="tabBadgeTags" style="display:none"></span></button>
+  <button class="tab" id="tabFinder" data-tab="finder" style="display:none">Finder<span class="tab-badge" id="tabBadgeFinder" style="display:none"></span></button>
   <button class="tab" data-tab="console">Console</button>
 </div>
 
@@ -372,6 +405,39 @@
       <thead><tr><th>Kind</th><th>Label</th><th>Address</th><th>Location</th><th>When</th><th></th></tr></thead>
       <tbody><tr><td colspan="6" class="empty">No tags yet.</td></tr></tbody>
     </table>
+  </div>
+</div>
+</div>
+
+<div class="tab-pane" id="tab-finder">
+<div class="finder-grid">
+  <div class="panel">
+    <h2>Direction Finder</h2>
+    <div class="finder-target">
+      <select id="finderSelect"><option value="">— pick a target —</option></select>
+      <button id="btnFinderClear" style="font-size:11px;">clear</button>
+    </div>
+    <div id="finderReadout">
+      <div id="finderTrend" class="steady">— select a target —</div>
+      <div id="finderRssi">··</div>
+      <div id="finderProx"></div>
+      <div class="signal-bar"><div id="finderFill" class="signal-fill"></div></div>
+      <div class="finder-stats"><span id="finderBest">best —</span><span id="finderSeen">—</span></div>
+    </div>
+    <p class="empty" style="margin:12px 0 0; font-size:11px; line-height:1.5;">
+      Walk while watching the trend: <b style="color:#ff5a3c">WARMER</b> means you're closing on the
+      emitter, <b style="color:#3aa0ff">COLDER</b> means moving away. RSSI is read live from the dongle
+      (~2s). Sweep slowly and turn to find the strongest bearing.</p>
+    <div id="gpsLine" class="gps-line">GPS: waiting…</div>
+  </div>
+  <div class="panel">
+    <h2>Field Map <span id="mapMeta" class="mac"></span></h2>
+    <div id="mapWrap">
+      <canvas id="finderMap"></canvas>
+      <div id="mapLegend">🔴 hot / close &nbsp;·&nbsp; 🔵 cold / far &nbsp;·&nbsp; ◎ you</div>
+      <div id="mapHint">Move around with the app to draw your track. Device dots appear where the base heard them (needs a base with <code>--history</code>).</div>
+    </div>
+    <p class="empty" style="margin:8px 0 0; font-size:11px;">Offline plot (no tiles, no network): your walked track + each device's sighting points, colored by signal. The selected target is highlighted.</p>
   </div>
 </div>
 </div>
@@ -861,6 +927,7 @@ function rssiClass(rssi) {
 
 let lastApRows = [];
 let lastBleRows = [];
+let lastStaRows = [];
 
 // While the user is focused inside a table (typing a duration, on a button),
 // skip re-rendering it so auto-refresh doesn't fight the interaction.
@@ -912,7 +979,7 @@ function parseApList(lines) {
       <td class="${r.sec === 'open' ? 'tag-open' : 'tag-enc'}">${r.sec}</td>
       <td>
         <div class="row-actions">
-          ${tagBtn('ap', r.bssid)}
+          ${findBtn('ap', r.bssid)}${tagBtn('ap', r.bssid)}
           <input type="number" min="1" max="60" value="20" id="dur-${r.idx}" title="seconds">
           <button class="danger" onclick="deauthAp(${r.idx})" ${armed ? '' : 'disabled title="Arm deauth first"'}>Deauth</button>
         </div>
@@ -929,6 +996,7 @@ function parseStaList(lines) {
     if (m) rows.push({ mac: m[1], ap: m[2], rssi: +m[3] });
   }
   rows.sort((a, b) => b.rssi - a.rssi); // strongest (closest) signal first
+  lastStaRows = rows;
   $('statSta').textContent = rows.length;
   $('staCountLabel').textContent = rows.length ? `(${rows.length})` : '';
   const tbody = $('staTable').querySelector('tbody');
@@ -957,7 +1025,7 @@ function parseStaList(lines) {
       <td class="mac">${r.mac}</td>
       <td class="mac">${r.ap}</td>
       <td class="${rssiClass(r.rssi)}">${r.rssi}</td>
-      <td><div class="row-actions">${tagBtn('sta', r.mac)}${deauthCell}</div></td>
+      <td><div class="row-actions">${findBtn('sta', r.mac)}${tagBtn('sta', r.mac)}${deauthCell}</div></td>
     </tr>`;
   }).join('');
   restoreInputs(savedInputs);
@@ -995,7 +1063,7 @@ function parseBleList(lines) {
       <td>${r.mfg ? escapeHtml(r.mfg) : '<span class="empty">—</span>'}</td>
       <td>
         <div class="row-actions">
-          ${tagBtn('ble', r.addr)}
+          ${findBtn('ble', r.addr)}${tagBtn('ble', r.addr)}
           <input id="fdur-${r.idx}" type="number" min="1" max="120" value="30" style="width:52px;" title="fuzz duration (s)">
           <button class="danger" onclick="fuzzBle(${r.idx})" ${dis}>Fuzz</button>
         </div>
@@ -1349,7 +1417,8 @@ window.tagTarget = function (kind, addr) {
 // Native callback: (ok, latitude, longitude, accuracy_m, message).
 window.onAndroidGps = function (ok, lat, lon, acc, msg) {
   const p = pendingTag; pendingTag = null;
-  if (!p) return;
+  // No pending tag => this fix is a stream sample (older app: getLocation polling).
+  if (!p) { if (ok && posStreamOn) handleFix(lat, lon, acc); return; }
   if (!ok) { showToast('Location failed: ' + (msg || 'unavailable')); return; }
   geoTags = geoTags.filter(t => tagKey(t.kind, t.addr) !== tagKey(p.kind, p.addr)); // re-tag replaces
   geoTags.push({ kind: p.kind, addr: p.addr, label: p.label || '', lat, lon, acc, ts: Math.floor(Date.now() / 1000) });
@@ -1438,6 +1507,295 @@ function initTags() {
   });
 }
 
+// ---- Direction finder + offline field map (companion app only) ----
+// Live "hotter/colder" bearing aid: reads the selected target's RSSI straight
+// off the dongle's live tables (refreshed ~2s) and calls the trend. The map is
+// a tile-free plot -- no network, works anywhere: it projects lat/lon locally to
+// canvas pixels and draws the walked track + geo-stamped device dots by signal.
+
+let finderTarget = null;              // {kind, addr, label}
+let finderSamples = [];               // recent {t, rssi} for the trend
+let finderBest = null;                // strongest RSSI seen this hunt
+let finderLastRssi = null;
+const FINDER_WINDOW_MS = 16000;       // trend look-back
+
+// Crosshair button rendered next to the tag button on each live row.
+function findBtn(kind, addr) {
+  if (!gpsAvailable()) return '';
+  const on = finderTarget && tagKey(finderTarget.kind, finderTarget.addr) === tagKey(kind, addr);
+  return `<button class="find-btn${on ? ' on' : ''}" title="Direction-find this target" onclick="findTarget('${kind}','${addr}')">◎</button>`;
+}
+
+// Live RSSI for any target, scanned across the three live tables.
+function liveRssi(kind, addr) {
+  const A = String(addr).toUpperCase();
+  let r;
+  if (kind === 'ap')  r = lastApRows.find(x => x.bssid.toUpperCase() === A);
+  else if (kind === 'sta') r = lastStaRows.find(x => x.mac.toUpperCase() === A);
+  else if (kind === 'ble') r = lastBleRows.find(x => x.addr.toUpperCase() === A);
+  return r ? r.rssi : null;
+}
+
+window.findTarget = function (kind, addr) {
+  setFinderTarget(kind, addr, lookupLabel(kind, addr));
+  const btn = document.querySelector('.tab[data-tab="finder"]');
+  if (btn) btn.click();                // jump to the Finder tab
+};
+
+function setFinderTarget(kind, addr, label) {
+  finderTarget = { kind, addr, label: label || '' };
+  finderSamples = []; finderBest = null; finderLastRssi = null; finderTrail = [];
+  const sel = $('finderSelect'); if (sel) sel.value = kind + '|' + String(addr).toUpperCase();
+  document.querySelectorAll('button.find-btn').forEach(b => {
+    const m = (b.getAttribute('onclick') || '').match(/findTarget\('([^']+)','([^']+)'\)/);
+    if (m) b.classList.toggle('on', tagKey(m[1], m[2]) === tagKey(kind, addr));
+  });
+  updateFinder();
+}
+
+// Rebuild the target dropdown from whatever's live + the current pick.
+function refreshFinderOptions() {
+  const sel = $('finderSelect'); if (!sel) return;
+  const seen = new Set(), opts = [];
+  const add = (kind, addr, label, rssi) => {
+    const key = kind + '|' + String(addr).toUpperCase();
+    if (seen.has(key)) return; seen.add(key);
+    const tag = rssi != null ? ` (${rssi})` : '';
+    opts.push(`<option value="${key}">${escapeHtml((label || addr) + ' · ' + kind.toUpperCase() + tag)}</option>`);
+  };
+  lastApRows.forEach(r => add('ap', r.bssid, r.ssid, r.rssi));
+  lastStaRows.forEach(r => add('sta', r.mac, '', r.rssi));
+  lastBleRows.forEach(r => add('ble', r.addr, r.name, r.rssi));
+  const cur = finderTarget ? (finderTarget.kind + '|' + finderTarget.addr.toUpperCase()) : '';
+  if (cur && !seen.has(cur)) add(finderTarget.kind, finderTarget.addr, finderTarget.label, null);
+  sel.innerHTML = '<option value="">— pick a target —</option>' + opts.join('');
+  sel.value = cur;
+}
+
+function proximityLabel(rssi) {
+  if (rssi == null) return '';
+  if (rssi >= -45) return 'very close';
+  if (rssi >= -60) return 'close';
+  if (rssi >= -72) return 'nearby';
+  if (rssi >= -85) return 'far';
+  return 'edge of range';
+}
+
+// Split the window into older/recent halves and compare means => trend.
+function computeTrend() {
+  const now = Date.now();
+  const s = finderSamples.filter(x => now - x.t <= FINDER_WINDOW_MS);
+  if (s.length < 3) return 'steady';
+  const mid = now - FINDER_WINDOW_MS / 2;
+  const older = s.filter(x => x.t < mid), recent = s.filter(x => x.t >= mid);
+  if (!older.length || !recent.length) return 'steady';
+  const mean = a => a.reduce((p, x) => p + x.rssi, 0) / a.length;
+  const delta = mean(recent) - mean(older);
+  if (delta >= 2.5) return 'warmer';
+  if (delta <= -2.5) return 'colder';
+  return 'steady';
+}
+
+function updateFinder() {
+  const trendEl = $('finderTrend'), rssiEl = $('finderRssi');
+  if (!trendEl) return;
+  if (!finderTarget) {
+    trendEl.className = 'steady'; trendEl.textContent = '— select a target —';
+    rssiEl.textContent = '··'; $('finderProx').textContent = '';
+    $('finderFill').style.width = '0%';
+    $('finderBest').textContent = 'best —'; $('finderSeen').textContent = '—';
+    return;
+  }
+  const rssi = finderLastRssi;
+  const label = escapeHtml(finderTarget.label || finderTarget.addr);
+  if (rssi == null) {
+    trendEl.className = 'nosig'; trendEl.textContent = 'no signal — out of range?';
+    rssiEl.textContent = '··'; $('finderProx').textContent = label;
+    $('finderFill').style.width = '0%';
+  } else {
+    const map = { warmer: ['WARMER ▲', 'warmer'], colder: ['COLDER ▼', 'colder'], steady: ['STEADY ·', 'steady'] };
+    const [txt, cls] = map[computeTrend()];
+    trendEl.className = cls; trendEl.textContent = txt;
+    rssiEl.textContent = rssi + ' dBm';
+    $('finderProx').textContent = label + ' · ' + proximityLabel(rssi);
+    const fill = $('finderFill');
+    fill.style.width = Math.max(0, Math.min(100, (rssi + 100) / 70 * 100)).toFixed(0) + '%';
+    fill.style.background = heatColor(rssi);
+  }
+  $('finderBest').textContent = 'best ' + (finderBest == null ? '—' : finderBest + ' dBm');
+  $('finderSeen').textContent = finderLastRssi == null ? 'no live signal' : 'live';
+}
+
+// Sampled on a steady tick so the trend has a stable time base even if the row
+// refresh is bursty.
+function finderTick() {
+  if (!finderTarget) return;
+  const rssi = liveRssi(finderTarget.kind, finderTarget.addr);
+  finderLastRssi = rssi;
+  if (rssi != null) {
+    finderSamples.push({ t: Date.now(), rssi });
+    if (finderSamples.length > 40) finderSamples.shift();
+    if (finderBest == null || rssi > finderBest) finderBest = rssi;
+    if (lastFix && Date.now() - lastFix.t < 6000) {   // hot/cold breadcrumb
+      finderTrail.push({ lat: lastFix.lat, lon: lastFix.lon, rssi });
+      if (finderTrail.length > 400) finderTrail.shift();
+    }
+  }
+  updateFinder();
+  if (activeTab() === 'finder') drawMap();
+}
+
+// ---- GPS streaming to the base + local walked track ----
+let posStreamOn = false;
+let posPollTimer = null;
+let lastFix = null;                 // {t, lat, lon, acc}
+let localTrack = [];                // this session's walked path {lat, lon, t}
+let finderTrail = [];               // {lat, lon, rssi} hot/cold breadcrumbs
+let geoDots = [];                   // /api/geo device sightings
+
+function startPosStream() {
+  if (posStreamOn || !window.AndroidGps) return;
+  posStreamOn = true;
+  if (typeof AndroidGps.startUpdates === 'function') {
+    try { AndroidGps.startUpdates(3000); } catch (e) { posStreamOn = false; }
+  } else {
+    // Older app build: poll getLocation(); onAndroidGps routes fixes to
+    // handleFix when no tag is pending.
+    posPollTimer = setInterval(() => {
+      if (!pendingTag) { try { AndroidGps.getLocation(); } catch (e) {} }
+    }, 4000);
+    try { AndroidGps.getLocation(); } catch (e) {}
+  }
+}
+
+// Native push from the app's requestLocationUpdates (new bridge method).
+window.onAriesPosition = function (lat, lon, acc) { handleFix(lat, lon, acc); };
+
+function handleFix(lat, lon, acc) {
+  if (typeof lat !== 'number' || typeof lon !== 'number' || (lat === 0 && lon === 0)) return;
+  const now = Date.now();
+  lastFix = { t: now, lat, lon, acc };
+  const last = localTrack[localTrack.length - 1];
+  const far = !last || (now - (last.t || 0) > 3000) || haversine(last.lat, last.lon, lat, lon) > 3;
+  if (far) { localTrack.push({ lat, lon, t: now }); if (localTrack.length > 3000) localTrack.shift(); }
+  const gl = $('gpsLine');
+  if (gl) gl.textContent = 'GPS: ' + lat.toFixed(5) + ', ' + lon.toFixed(5) + '  ±' + Math.round(acc || 0) + 'm';
+  if (histAvailable) {   // let the base geo-stamp its sightings
+    fetch('/api/position', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+      body: JSON.stringify({ lat, lon, acc }),
+    }).catch(() => {});
+  }
+  if (activeTab() === 'finder') drawMap();
+}
+
+function haversine(la1, lo1, la2, lo2) {
+  const R = 6371000, d = Math.PI / 180;
+  const dLa = (la2 - la1) * d, dLo = (lo2 - lo1) * d;
+  const a = Math.sin(dLa / 2) ** 2 + Math.cos(la1 * d) * Math.cos(la2 * d) * Math.sin(dLo / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// ---- offline map (tile-free canvas plot) ----
+function heatColor(rssi) {
+  if (rssi == null) return '#3a4a63';
+  const t = Math.max(0, Math.min(1, (rssi + 100) / 70)); // 0 far .. 1 close
+  return `hsl(${(1 - t) * 210}, 85%, 55%)`;               // 210 blue(far) .. 0 red(close)
+}
+
+async function loadGeoDots() {
+  if (!histAvailable) return;
+  try { geoDots = await apiGet('/api/geo'); } catch (e) {}
+  if (activeTab() === 'finder') drawMap();
+}
+
+function drawMap() {
+  const cv = $('finderMap'); if (!cv) return;
+  const wrap = $('mapWrap');
+  const dpr = window.devicePixelRatio || 1;
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  if (!W || !H) return;
+  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  const pts = [];
+  localTrack.forEach(p => pts.push(p));
+  finderTrail.forEach(p => pts.push(p));
+  geoDots.forEach(p => pts.push({ lat: p.lat, lon: p.lon }));
+  if (lastFix) pts.push(lastFix);
+  const hint = $('mapHint');
+  if (!pts.length) { if (hint) hint.style.display = 'flex'; return; }
+  if (hint) hint.style.display = 'none';
+
+  let minLa = 90, maxLa = -90, minLo = 180, maxLo = -180;
+  pts.forEach(p => { minLa = Math.min(minLa, p.lat); maxLa = Math.max(maxLa, p.lat); minLo = Math.min(minLo, p.lon); maxLo = Math.max(maxLo, p.lon); });
+  const latMid = (minLa + maxLa) / 2;
+  const cosLat = Math.cos(latMid * Math.PI / 180) || 1;
+  let spanX = Math.max((maxLo - minLo) * cosLat, 1e-6), spanY = Math.max(maxLa - minLa, 1e-6);
+  const pad = 24;
+  const scale = Math.min((W - 2 * pad) / spanX, (H - 2 * pad) / spanY);
+  const cx = (minLo + maxLo) / 2, cy = (minLa + maxLa) / 2;
+  const proj = (lat, lon) => ({ x: W / 2 + ((lon - cx) * cosLat) * scale, y: H / 2 - (lat - cy) * scale });
+  const TAU = Math.PI * 2;
+
+  // device sighting dots (dim unless they belong to the selected target)
+  const selKey = finderTarget ? tagKey(finderTarget.kind, finderTarget.addr) : null;
+  geoDots.forEach(d => {
+    const q = proj(d.lat, d.lon);
+    const sel = selKey && tagKey(d.kind, d.addr) === selKey;
+    ctx.beginPath(); ctx.arc(q.x, q.y, sel ? 5 : 3, 0, TAU);
+    ctx.fillStyle = heatColor(d.rssi); ctx.globalAlpha = sel ? 1 : 0.5; ctx.fill(); ctx.globalAlpha = 1;
+    if (sel) { ctx.lineWidth = 1.5; ctx.strokeStyle = '#fff'; ctx.stroke(); }
+  });
+  // walked track
+  if (localTrack.length > 1) {
+    ctx.beginPath();
+    localTrack.forEach((p, i) => { const q = proj(p.lat, p.lon); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); });
+    ctx.strokeStyle = 'rgba(120,180,255,0.55)'; ctx.lineWidth = 2; ctx.stroke();
+  }
+  // hot/cold breadcrumbs for the current hunt
+  finderTrail.forEach(p => {
+    const q = proj(p.lat, p.lon);
+    ctx.beginPath(); ctx.arc(q.x, q.y, 4, 0, TAU); ctx.fillStyle = heatColor(p.rssi); ctx.fill();
+  });
+  // you-are-here
+  if (lastFix) {
+    const q = proj(lastFix.lat, lastFix.lon);
+    ctx.beginPath(); ctx.arc(q.x, q.y, 7, 0, TAU); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.beginPath(); ctx.arc(q.x, q.y, 2.5, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill();
+  }
+  const meta = $('mapMeta');
+  if (meta) meta.textContent = geoDots.length ? `(${geoDots.length} dots)` : '';
+}
+
+let finderInited = false;
+function initFinder() {
+  if (finderInited || !gpsAvailable()) return;
+  finderInited = true;
+  const tab = $('tabFinder'); if (tab) tab.style.display = '';
+  const sel = $('finderSelect');
+  if (sel) sel.addEventListener('change', () => {
+    const v = sel.value;
+    if (!v) { finderTarget = null; updateFinder(); return; }
+    const [kind, addr] = v.split('|');
+    setFinderTarget(kind, addr, lookupLabel(kind, addr));
+  });
+  const clr = $('btnFinderClear');
+  if (clr) clr.addEventListener('click', () => {
+    finderTarget = null; finderSamples = []; finderBest = null; finderTrail = [];
+    if (sel) sel.value = ''; updateFinder();
+  });
+  startPosStream();
+  setInterval(finderTick, 1200);
+  setInterval(refreshFinderOptions, 3000);
+  setInterval(loadGeoDots, 10000);
+  loadGeoDots();
+  window.addEventListener('resize', () => { if (activeTab() === 'finder') drawMap(); });
+}
+
 // ---- Tabs ----
 let unreadAlerts = 0;
 function activeTab() {
@@ -1461,17 +1819,20 @@ function refreshTabBadges() {
   setTabBadge('tabBadgeWifi', num('statAp') + num('statSta'));
   setTabBadge('tabBadgeBle', num('statBle'));
   if (!tagsInited) initTags(); // reveal the Tags tab if the app bridge arrived late
+  if (!finderInited) initFinder(); // same late-reveal for the Finder tab
 }
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
   const name = t.dataset.tab;
   document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   if (name === 'history') { unreadAlerts = 0; updateHistoryBadge(); }
+  if (name === 'finder') { refreshFinderOptions(); drawMap(); }
 }));
 setInterval(refreshTabBadges, 1500);
 
 initHistory();
 initTags();
+initFinder();
 </script>
 </body>
 </html>
