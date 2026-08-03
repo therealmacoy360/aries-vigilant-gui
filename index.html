@@ -320,6 +320,7 @@
   <button class="tab active" data-tab="wifi">WiFi<span class="tab-badge" id="tabBadgeWifi" style="display:none"></span></button>
   <button class="tab" data-tab="ble">BLE<span class="tab-badge" id="tabBadgeBle" style="display:none"></span></button>
   <button class="tab" data-tab="probes">Probes<span class="tab-badge" id="tabBadgeProbes" style="display:none"></span></button>
+  <button class="tab" data-tab="capture">Capture<span class="tab-badge" id="tabBadgeCapture" style="display:none"></span></button>
   <button class="tab" data-tab="history">History<span class="tab-badge" id="tabBadgeHistory" style="display:none"></span></button>
   <button class="tab" id="tabTags" data-tab="tags" style="display:none">Tags<span class="tab-badge" id="tabBadgeTags" style="display:none"></span></button>
   <button class="tab" id="tabFinder" data-tab="finder" style="display:none">Finder<span class="tab-badge" id="tabBadgeFinder" style="display:none"></span></button>
@@ -372,6 +373,26 @@
       <tbody><tr><td colspan="4" class="empty">Start a scan; probe requests from nearby clients appear here.</td></tr></tbody>
     </table>
   </div>
+</div>
+</div>
+
+<div class="tab-pane" id="tab-capture">
+<div class="panel">
+  <h2>PCAP Capture <span id="captureBadge" class="mac"></span></h2>
+  <p class="empty" style="margin:0 0 10px; font-size:11px; line-height:1.5;">
+    Records <b>only the selected AP's</b> 802.11 frames to a <code>.pcap</code> on the SD card —
+    its beacons, the AP↔client handshake, and that network's data. No other network is captured.
+    Start it from the <b>Cap</b> button on any row in the <b>WiFi</b> tab (default 60s), then
+    briefly <b>Deauth</b> a client to force a WPA handshake. Only capture networks you own or are
+    explicitly authorized to test.</p>
+  <div id="captureStatus" class="gps-line" style="font-size:13px;">No capture running.</div>
+  <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+    <button id="btnCaptureStop" class="danger" disabled>Stop capture</button>
+    <button id="btnCaptureDownload" disabled>Download .pcap</button>
+  </div>
+  <p class="empty" style="margin:12px 0 0; font-size:11px;">Download streams the file over the
+    link (base64) — quick for handshake captures; for large files, pull the SD card. You can also
+    capture a custom length from the console: <code>pcap &lt;n&gt; &lt;sec&gt;</code>.</p>
 </div>
 </div>
 
@@ -828,12 +849,81 @@ function bumpQuietTimer() {
 }
 
 let currentLines = [];
+let b64 = null; // in-flight file download: {name, size, data}
 function onLine(line) {
+  // Binary file download (from `download <file>`): capture the base64 stream
+  // between the markers and reassemble it, keeping it out of the console.
+  let bm = line.match(/^---B64-BEGIN (\S+) (\d+)---$/);
+  if (bm) { b64 = { name: bm[1], size: +bm[2], data: '' }; showToast('⬇ downloading ' + bm[1] + '…'); return; }
+  if (b64) {
+    if (line === '---B64-END---') { finishB64(); return; }
+    b64.data += line.trim();
+    return;
+  }
   // Suppress console echo for quiet (auto-poll) commands; always show
   // unsolicited output (errors, boot banner) that arrives with no command.
   const quiet = cmdBusy && cmdQueue[0] && cmdQueue[0].quiet;
   if (!quiet) log(line);
   currentLines.push(line);
+}
+
+function finishB64() {
+  const info = b64; b64 = null;
+  try {
+    const bin = atob(info.data);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'application/vnd.tcpdump.pcap' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = info.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    showToast('✓ saved ' + info.name + ' (' + bytes.length + ' bytes)');
+  } catch (e) { showToast('Download failed to decode: ' + e.message); }
+}
+
+// ---- PCAP capture ----
+let captureActive = false;
+let captureFile = '';
+
+window.captureStart = async function (idx) {
+  if (!$('chkAuthorized').checked) {
+    alert('Check the authorization box first — only capture networks you own or are explicitly authorized to test.');
+    return;
+  }
+  const row = lastApRows.find(r => r.idx === idx);
+  const label = row ? ((row.ssid || '(hidden)') + ' (' + row.bssid + ')') : ('AP #' + idx);
+  const ok = confirm(`Capture 60s of ${label} to a .pcap on the SD card?\n\n` +
+    `Only this network's frames are recorded. Proceed only if you own or are authorized to test it.`);
+  if (!ok) return;
+  await sendCommand('pcap ' + idx + ' 60');
+  const t = document.querySelector('.tab[data-tab="capture"]'); if (t) t.click();
+};
+
+window.captureStop = async function () { await sendCommand('pcap stop'); };
+
+function captureDownload() {
+  if (!captureFile) { showToast('No capture file yet.'); return; }
+  showToast('Requesting ' + captureFile + '…');
+  sendCommand('download ' + captureFile);
+}
+
+function updateCaptureStatus(active, file, frames, dropped, left) {
+  captureActive = active;
+  if (file) captureFile = file;
+  const el = $('captureStatus');
+  if (el) {
+    el.textContent = active
+      ? `● Capturing ${file || captureFile} — ${frames} frames, ${dropped} dropped, ${left}s left`
+      : (captureFile ? `Idle. Last capture: ${captureFile} (${frames} frames)` : 'No capture running.');
+    el.style.color = active ? 'var(--danger)' : '';
+  }
+  const badge = $('captureBadge'); if (badge) badge.textContent = active ? '● recording' : '';
+  const tb = $('tabBadgeCapture');
+  if (tb) { tb.textContent = active ? '●' : ''; tb.style.display = active ? 'inline-block' : 'none'; }
+  const stop = $('btnCaptureStop'); if (stop) stop.disabled = !active;
+  const dl = $('btnCaptureDownload'); if (dl) dl.disabled = active || !captureFile;
 }
 
 function finishCurrentCommand() {
@@ -917,6 +1007,8 @@ function parseStatus(lines) {
       if (detected) $('spamText').textContent =
         `${flavor} — ${ads} pairing ads from ${macs} rotating MACs in the last window (${dets} detection${dets === '1' ? '' : 's'} this session)`;
     }
+    m = l.match(/Capture: (\w+) \| file: (\S+) \| frames: (\d+) \| dropped: (\d+) \| left: (\d+)s/);
+    if (m) updateCaptureStatus(m[1] === 'ACTIVE', m[2] === '-' ? '' : m[2], +m[3], +m[4], +m[5]);
     m = l.match(/Debug: ch=(\d+) total_pkts=(\d+) mgmt=(\d+) data=(\d+) beacon\/probe=(\d+)/);
     if (m) {
       $('statCh').textContent = m[1];
@@ -987,6 +1079,7 @@ function parseApList(lines) {
       <td>
         <div class="row-actions">
           ${findBtn('ap', r.bssid)}${tagBtn('ap', r.bssid)}
+          <button onclick="captureStart(${r.idx})" title="Capture only this AP's frames to a .pcap (60s)">Cap</button>
           <input type="number" min="1" max="60" value="20" id="dur-${r.idx}" title="seconds">
           <button class="danger" onclick="deauthAp(${r.idx})" ${armed ? '' : 'disabled title="Arm deauth first"'}>Deauth</button>
         </div>
@@ -1163,6 +1256,8 @@ $('btnAuto').addEventListener('click', () => {
   autoRefresh = !autoRefresh;
   $('btnAuto').textContent = 'Auto-refresh: ' + (autoRefresh ? 'on' : 'off');
 });
+$('btnCaptureStop').addEventListener('click', captureStop);
+$('btnCaptureDownload').addEventListener('click', captureDownload);
 $('btnLog').addEventListener('click', async () => {
   const turningOn = $('btnLog').textContent.includes('off');
   await sendCommand('log ' + (turningOn ? 'on' : 'off'));
