@@ -295,7 +295,6 @@
     <div class="stat"><span class="label">APs</span><span class="value" id="statAp">—</span></div>
     <div class="stat"><span class="label">Stations</span><span class="value" id="statSta">—</span></div>
     <div class="stat"><span class="label">BLE</span><span class="value" id="statBle">—</span></div>
-    <div class="stat"><span class="label">Fuzz</span><span class="value" id="statFuzz">—</span></div>
     <div class="stat" id="spamTile"><span class="label">Spam Watch</span><span class="value" id="statSpam">—</span></div>
     <div class="stat"><span class="label">Channel</span><span class="value" id="statCh">—</span></div>
     <div class="stat"><span class="label">Packets</span><span class="value" id="statPkts">—</span></div>
@@ -313,8 +312,6 @@
     <label><input type="checkbox" id="chkAuthorized" disabled> I own or am explicitly authorized to test the network(s) I'm about to target.</label>
     <button id="btnArm" class="danger" disabled>Arm Deauth</button>
     <span id="armStatus" style="margin-left:8px;">not armed</span>
-    <button id="btnArmFuzz" class="danger" disabled title="Arm BLE GATT fuzzing (writes malformed payloads to a target's writable characteristics). Uses the same authorization checkbox.">Arm Fuzz</button>
-    <span id="fuzzArmStatus" style="margin-left:8px;">not armed</span>
   </div>
 </div>
 
@@ -351,7 +348,7 @@
 <div class="panel">
   <h2>BLE Devices <span id="bleCountLabel"></span></h2>
   <table id="bleTable">
-    <thead><tr><th>Name</th><th>Address</th><th>RSSI</th><th>Mfr</th><th>Fuzz</th></tr></thead>
+    <thead><tr><th>Name</th><th>Address</th><th>RSSI</th><th>Mfr</th><th></th></tr></thead>
     <tbody><tr><td colspan="5" class="empty">Click "BLE Scan" to discover nearby Bluetooth LE devices.</td></tr></tbody>
   </table>
 </div>
@@ -493,7 +490,6 @@ let lineBuffer = '';
 let cmdQueue = [];
 let cmdBusy = false;
 let armed = false;
-let fuzzArmed = false;
 let bleOn = false;
 let wifiOn = false;
 let autoRefresh = true;
@@ -580,9 +576,6 @@ function updateArmUi() {
   $('btnArm').disabled = !transport || !authorized || armed;
   $('armStatus').textContent = armed ? 'ARMED' : 'not armed';
   $('armStatus').style.color = armed ? 'var(--danger)' : 'var(--text-dim)';
-  $('btnArmFuzz').disabled = !transport || !authorized || fuzzArmed;
-  $('fuzzArmStatus').textContent = fuzzArmed ? 'ARMED' : 'not armed';
-  $('fuzzArmStatus').style.color = fuzzArmed ? 'var(--danger)' : 'var(--text-dim)';
 }
 $('chkAuthorized').addEventListener('change', updateArmUi);
 
@@ -884,17 +877,6 @@ function parseStatus(lines) {
       $('btnLog').textContent = 'Log: ' + m[3];
       updateArmUi();
     }
-    m = l.match(/Fuzz: (\w+)\s*(\d*) \| armed: (\w+) \| writable_chars: (\d+) writes: (\d+) errors: (\d+) disc: (\d+) last_err: (\S+)/);
-    if (m) {
-      const fActive = m[1] === 'ACTIVE';
-      fuzzArmed = m[3] === 'yes';
-      const lastErr = m[8];
-      $('statFuzz').textContent = fActive
-        ? `${m[2]}s · w${m[5]} e${m[6]} d${m[7]}` + (lastErr !== '-' ? ` · ${lastErr}` : '')
-        : (fuzzArmed ? 'armed' : 'off');
-      $('statFuzz').title = lastErr !== '-' ? ('last write error: ' + lastErr) : '';
-      updateArmUi();
-    }
     m = l.match(/BLE spam: (\w+) \| flavor: (\S+) \| detections: (\d+) \| live: (\d+)ads\/(\d+)MACs/);
     if (m) {
       const detected = m[1] === 'DETECTED';
@@ -1037,9 +1019,8 @@ function parseBleList(lines) {
     // "  [0] <name may have spaces> AA:BB:CC:DD:EE:FF rssi-45" -- anchor on the
     // MAC + rssi so names containing spaces still parse.
     const m = l.match(/^\s*\[(\d+)\]\s+(.*?)\s+([0-9A-Fa-f:]{17})\s+rssi(-?\d+)(?:\s+mfg=(.+?))?\s*$/);
-    // idx is the firmware's own list index -- the fuzzer resolves the target
-    // (and its address type) by this index, so we keep it even though we
-    // re-sort the rows by signal for display. mfg is optional.
+    // idx is the firmware's own list index; kept even though we re-sort rows by
+    // signal for display. mfg is optional.
     if (m) rows.push({ idx: +m[1], name: m[2].trim(), addr: m[3], rssi: +m[4], mfg: (m[5] || '').trim() });
   }
   rows.sort((a, b) => b.rssi - a.rssi); // strongest (closest) signal first
@@ -1054,20 +1035,13 @@ function parseBleList(lines) {
   }
   const saved = captureInputs('bleTable');
   tbody.innerHTML = rows.map(r => {
-    const dis = fuzzArmed ? '' : 'disabled title="Arm fuzzing first"';
     return `
     <tr>
       <td>${(r.name && r.name !== '(no name)') ? escapeHtml(r.name) : '<span class="empty">(no name)</span>'}</td>
       <td class="mac">${r.addr}</td>
       <td class="${rssiClass(r.rssi)}">${r.rssi}</td>
       <td>${r.mfg ? escapeHtml(r.mfg) : '<span class="empty">—</span>'}</td>
-      <td>
-        <div class="row-actions">
-          ${findBtn('ble', r.addr)}${tagBtn('ble', r.addr)}
-          <input id="fdur-${r.idx}" type="number" min="1" max="120" value="30" style="width:52px;" title="fuzz duration (s)">
-          <button class="danger" onclick="fuzzBle(${r.idx})" ${dis}>Fuzz</button>
-        </div>
-      </td>
+      <td><div class="row-actions">${findBtn('ble', r.addr)}${tagBtn('ble', r.addr)}</div></td>
     </tr>`;
   }).join('');
   restoreInputs(saved);
@@ -1106,20 +1080,6 @@ window.deauthStation = async function (apIdx, mac) {
   await sendCommand(`deauth ${apIdx} ${mac} ${dur}`);
 };
 
-window.fuzzBle = async function (idx) {
-  if (!fuzzArmed) { alert('Arm fuzzing first (check the authorization box, then click "Arm Fuzz").'); return; }
-  const durEl = $('fdur-' + idx);
-  const dur = Math.max(1, Math.min(120, +(durEl && durEl.value) || 30));
-  const ok = confirm(
-    `Fuzz the GATT characteristics of BLE device #${idx} for up to ${dur}s?\n\n` +
-    `This connects to the device and writes malformed data to every writable ` +
-    `characteristic. It can crash, hang, or corrupt the target. Only proceed if ` +
-    `you own or are explicitly authorized to test this device.`
-  );
-  if (!ok) return;
-  await sendCommand(`fuzz ${idx} ${dur}`);
-};
-
 $('btnConnect').addEventListener('click', connect);
 $('btnDisconnect').addEventListener('click', disconnect);
 $('btnScan').addEventListener('click', () => sendCommand('scan'));
@@ -1155,15 +1115,6 @@ $('btnArm').addEventListener('click', async () => {
   // Re-render both tables so per-AP and per-station deauth buttons enable.
   await sendCommand('list');
   await sendCommand('stations');
-});
-$('btnArmFuzz').addEventListener('click', async () => {
-  if (!$('chkAuthorized').checked) return;
-  const ok = confirm('Arm BLE GATT fuzzing for this session? Only target devices you own or are authorized to test.');
-  if (!ok) return;
-  await sendCommand('enable-fuzz');
-  fuzzArmed = true;
-  updateArmUi();
-  await sendCommand('blelist'); // re-render so per-device Fuzz buttons enable
 });
 $('btnToggleConsole').addEventListener('click', () => {
   const hidden = consoleEl.style.display === 'none';
