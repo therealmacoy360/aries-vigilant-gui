@@ -1216,6 +1216,12 @@ function renderDevices() {
     (d.ssid || d.name || '').toLowerCase().includes(term) ||
     d.addr.toLowerCase().includes(term) ||
     d.kind.toLowerCase().includes(term));
+  // Strongest (closest) signal first; devices with no RSSI yet sink to the bottom.
+  rows = rows.slice().sort((a, b) => {
+    const ra = (a.last_rssi === null || a.last_rssi === undefined) ? -Infinity : a.last_rssi;
+    const rb = (b.last_rssi === null || b.last_rssi === undefined) ? -Infinity : b.last_rssi;
+    return rb - ra;
+  });
   $('histCount').textContent = term
     ? `(${rows.length} of ${histDevices.length})`
     : (histDevices.length ? `(${histDevices.length})` : '');
