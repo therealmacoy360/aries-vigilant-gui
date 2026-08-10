@@ -124,14 +124,14 @@
     0%, 49%  { background: var(--danger); color: #fff; }
     50%, 100% { background: transparent; color: var(--danger); }
   }
-  #spamTile.alert {
+  #spamTile.alert, #rotTile.alert, #wifiSpamTile.alert {
     animation: spamFlash 0.7s steps(1, end) infinite;
     border-radius: 4px;
     padding: 2px 6px;
     margin: -2px -6px;
   }
-  #spamTile.alert .label,
-  #spamTile.alert .value { color: inherit; }
+  #spamTile.alert .label, #rotTile.alert .label, #wifiSpamTile.alert .label,
+  #spamTile.alert .value, #rotTile.alert .value, #wifiSpamTile.alert .value { color: inherit; }
 
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
   th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--panel-border); }
@@ -287,6 +287,7 @@
 
 <div id="deauthBanner" class="deauth-banner">⚠ DEAUTH ACTIVE — <span id="deauthText"></span></div>
 <div id="spamBanner" class="spam-banner">📡 BLE PAIRING-SPAM DETECTED — <span id="spamText"></span></div>
+<div id="wifiSpamBanner" class="spam-banner">📶 WiFi BEACON-SPAM DETECTED — <span id="wifiSpamText"></span></div>
 
 <div class="panel" style="margin-bottom:16px;">
   <h2>Status</h2>
@@ -296,7 +297,9 @@
     <div class="stat"><span class="label">Stations</span><span class="value" id="statSta">—</span></div>
     <div class="stat"><span class="label">BLE</span><span class="value" id="statBle">—</span></div>
     <div class="stat"><span class="label">Probes</span><span class="value" id="statProbe">—</span></div>
+    <div class="stat" id="rotTile"><span class="label">Rotating</span><span class="value" id="statRot">—</span></div>
     <div class="stat" id="spamTile"><span class="label">Spam Watch</span><span class="value" id="statSpam">—</span></div>
+    <div class="stat" id="wifiSpamTile"><span class="label">WiFi Spam</span><span class="value" id="statWifiSpam">—</span></div>
     <div class="stat"><span class="label">Channel</span><span class="value" id="statCh">—</span></div>
     <div class="stat"><span class="label">Packets</span><span class="value" id="statPkts">—</span></div>
     <div class="stat"><span class="label">Logging</span><span class="value" id="statLog">—</span></div>
@@ -322,8 +325,12 @@
   <button class="tab" data-tab="probes">Probes<span class="tab-badge" id="tabBadgeProbes" style="display:none"></span></button>
   <button class="tab" data-tab="capture">Capture<span class="tab-badge" id="tabBadgeCapture" style="display:none"></span></button>
   <button class="tab" data-tab="history">History<span class="tab-badge" id="tabBadgeHistory" style="display:none"></span></button>
+  <button class="tab" id="tabFingerprints" data-tab="fp" style="display:none">Fingerprints<span class="tab-badge" id="tabBadgeFp" style="display:none"></span></button>
+  <button class="tab" id="tabWatch" data-tab="watch" style="display:none">Watchlist<span class="tab-badge" id="tabBadgeWatch" style="display:none"></span></button>
+  <button class="tab" id="tabFollowed" data-tab="followed" style="display:none">Followed<span class="tab-badge" id="tabBadgeFollowed" style="display:none"></span></button>
   <button class="tab" id="tabTags" data-tab="tags" style="display:none">Tags<span class="tab-badge" id="tabBadgeTags" style="display:none"></span></button>
   <button class="tab" id="tabFinder" data-tab="finder" style="display:none">Finder<span class="tab-badge" id="tabBadgeFinder" style="display:none"></span></button>
+  <button class="tab" id="tabNetwork" data-tab="net" style="display:none">Network</button>
   <button class="tab" data-tab="console">Console</button>
 </div>
 
@@ -373,6 +380,106 @@
       <tbody><tr><td colspan="4" class="empty">Start a scan; probe requests from nearby clients appear here.</td></tr></tbody>
     </table>
   </div>
+</div>
+</div>
+
+<div class="tab-pane" id="tab-fp">
+<div class="panel">
+  <h2>Identity Fingerprints <span id="fpCountLabel"></span></h2>
+  <p class="empty" style="margin:0 0 8px; font-size:11px; line-height:1.5;">
+    Phones, watches and earbuds re-randomize their Bluetooth MAC about every 15 minutes to
+    defeat tracking. The dongle hashes the <b>rotation-stable</b> part of each advertisement into a
+    fingerprint and groups those changing MACs back into one device. A device that has cycled
+    through several MACs while staying nearby is flagged <b>ROTATING</b> — the counter-surveillance
+    signal that something is lingering and hiding its identity. The base station keeps the running
+    history, so a device that quietly rotated for an hour is still listed after the fact.</p>
+  <div id="fpPlaceholder" class="empty" style="padding:14px 0;">
+    Fingerprint history needs a base station running <code>--history</code>. Connected straight to the
+    dongle, the live count still shows in the <b>Rotating</b> tile above.</div>
+  <div id="fpSection" style="display:none">
+    <input id="fpSearch" class="hist-search" placeholder="search fingerprint, name or vendor…">
+    <div class="table-scroll">
+      <table id="fpTable">
+        <thead><tr><th>Device</th><th>Vendor</th><th>MACs</th><th>Status</th><th>RSSI</th><th>Seen</th></tr></thead>
+        <tbody><tr><td colspan="6" class="empty">Start a BLE scan; devices grouped across MAC rotation appear here.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="tab-pane" id="tab-watch">
+<div class="panel">
+  <h2>Watchlist <span id="watchCount" class="mac"></span></h2>
+  <p class="empty" style="margin:0 0 8px; font-size:11px; line-height:1.5;">
+    Devices ranked by how <b>persistently</b> they've recurred over the last 14 days — the ones that
+    keep showing up near you. <b>Mute</b> (🔕) your own known devices so only the unfamiliar remain;
+    <b>star</b> (★) a concerning one to get an alert whenever it reappears. The bars show which hours
+    of the day it tends to be around. Needs a base station running <code>--history</code>.</p>
+  <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;">
+    <select id="watchKind" style="font-size:12px;">
+      <option value="person">People (BLE + stations)</option>
+      <option value="all">All device types</option>
+      <option value="ble">BLE only</option>
+      <option value="sta">Stations only</option>
+      <option value="ap">APs only</option>
+    </select>
+    <label style="font-size:11px;"><input type="checkbox" id="watchShowMuted"> show muted <span id="watchMutedCount" class="empty"></span></label>
+  </div>
+  <div class="table-scroll">
+    <table id="watchTable">
+      <thead><tr><th>Device</th><th>Days</th><th>Seen</th><th>Pattern (0–23h)</th><th>Last</th><th></th></tr></thead>
+      <tbody><tr><td colspan="6" class="empty">Give the base station time to build up history; persistent devices appear here.</td></tr></tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<div class="tab-pane" id="tab-followed">
+<div class="panel">
+  <h2>Followed <span id="followedCount" class="mac"></span></h2>
+  <p class="empty" style="margin:0 0 8px; font-size:11px; line-height:1.5;">
+    Devices seen at <b>2+ distinct places you've visited</b> — the strongest "something is following
+    me" signal. A device confined to one spot (a neighbour's, only ever at home) never shows; one
+    that turns up at home <i>and</i> work <i>and</i> a shop does. <b>Span</b> is how far apart those
+    places are. This only has data from sessions where you were <b>streaming GPS</b> (Finder mode).
+    Mute (🔕) your own devices — they travel with you, so they top this list.</p>
+  <div class="table-scroll">
+    <table id="followedTable">
+      <thead><tr><th>Device</th><th>Places</th><th>Span</th><th>Seen</th><th>Last</th><th></th></tr></thead>
+      <tbody><tr><td colspan="6" class="empty">Stream your location (Finder mode) while scanning; devices seen across places appear here.</td></tr></tbody>
+    </table>
+  </div>
+  <div id="followedDetail" style="display:none; margin-top:14px; padding-top:12px; border-top:1px solid var(--panel-border);">
+    <div style="margin-bottom:8px;"><b id="followedDetailLabel"></b> <span id="followedDetailSpan" class="mac"></span></div>
+    <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start;">
+      <div id="followedPlot"></div>
+      <div id="followedPlaces" style="font-size:11px; line-height:1.6;"></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="tab-pane" id="tab-net">
+<div class="panel">
+  <h2>Network <span id="netCurrent" class="mac"></span></h2>
+  <p class="empty" style="margin:0 0 10px; font-size:11px; line-height:1.5;">
+    Move the base station onto a different WiFi. When the Pi recognises no network it falls back to
+    its own <b>aries-hotspot</b> — join that from your phone to reach this page, then type the new
+    network below. The Pi has a single radio that's busy hosting the hotspot, so it <b>can't scan</b>
+    for you — enter the name yourself. <b>Heads up:</b> the moment it joins, the hotspot drops and
+    <b>this page will disconnect</b>. Reconnect your phone to that same network (or Tailscale) after
+    ~20&nbsp;seconds and reopen <code>aries.local:8080</code>. A joined network is saved and
+    auto-joined next time. If the password is wrong the hotspot comes back so the Pi is never
+    stranded.</p>
+  <div style="margin-bottom:6px;">Network name
+    <span class="empty" style="font-size:11px;">— exactly as it appears on your phone, case-sensitive.</span></div>
+  <input id="netManualSsid" placeholder="network name (SSID)" autocomplete="off" spellcheck="false"
+         autocapitalize="none" style="width:100%; max-width:320px; box-sizing:border-box;">
+  <input id="netManualPass" type="password" placeholder="password (leave blank if open)"
+         autocomplete="off" style="width:100%; max-width:320px; box-sizing:border-box; margin-top:6px;">
+  <div style="margin-top:8px;"><button id="btnNetManual" class="primary">Connect</button></div>
+  <div id="netResult" class="gps-line" style="margin-top:12px; display:none; font-size:12px; line-height:1.5;"></div>
 </div>
 </div>
 
@@ -1007,6 +1114,32 @@ function parseStatus(lines) {
       if (detected) $('spamText').textContent =
         `${flavor} — ${ads} pairing ads from ${macs} rotating MACs in the last window (${dets} detection${dets === '1' ? '' : 's'} this session)`;
     }
+    m = l.match(/WiFi spam: (\w+) \| ssids: (\d+) \| detections: (\d+) \| live: (\d+)newSSIDs\/(\d+)newBSSIDs/);
+    if (m) {
+      const detected = m[1] === 'DETECTED';
+      const ssids = m[2], dets = m[3], newSsids = m[4], newBssids = m[5];
+      // Like BLE spam, "clear" only means "watching and quiet"; if the WiFi scan
+      // is off the detector receives no beacons, so say so rather than all-clear.
+      $('statWifiSpam').textContent = detected ? `⚠ ${ssids} SSIDs`
+        : !wifiOn ? 'scan off'
+        : (dets > 0 ? `clear (${dets} seen)` : 'clear');
+      $('statWifiSpam').style.color = detected ? '' : (!wifiOn ? 'var(--text-dim)' : '');
+      $('wifiSpamTile').classList.toggle('alert', detected); // flash red while a flood is in range
+      $('statWifiSpam').title = !wifiOn && !detected ? 'WiFi scan is off — click "Scan" so the detector receives beacons' : '';
+      $('wifiSpamBanner').classList.toggle('active', detected);
+      if (detected) $('wifiSpamText').textContent =
+        `${newSsids} new SSIDs from ${newBssids} new BSSIDs in the last window (${dets} detection${dets === '1' ? '' : 's'} this session)`;
+    }
+    m = l.match(/BLE fingerprints: (\d+) \| rotating: (\d+)/);
+    if (m) {
+      const total = +m[1], rot = +m[2];
+      $('statRot').textContent = bleOn ? (rot + ' / ' + total) : 'scan off';
+      // Let the .alert flash carry the red when rotating; dim when the scan is off.
+      $('statRot').style.color = (!bleOn && rot === 0) ? 'var(--text-dim)' : '';
+      $('rotTile').classList.toggle('alert', rot > 0);
+      $('statRot').title = 'Devices rotating their MAC / total fingerprints in range';
+      setTabBadge('tabBadgeFp', rot);
+    }
     m = l.match(/Capture: (\w+) \| file: (\S+) \| frames: (\d+) \| dropped: (\d+) \| left: (\d+)s/);
     if (m) updateCaptureStatus(m[1] === 'ACTIVE', m[2] === '-' ? '' : m[2], +m[3], +m[4], +m[5]);
     m = l.match(/Debug: ch=(\d+) total_pkts=(\d+) mgmt=(\d+) data=(\d+) beacon\/probe=(\d+)/);
@@ -1338,6 +1471,313 @@ async function initHistory() {
   setInterval(() => { if (histAvailable) loadDevices(); }, 15000);
 }
 
+// ---- Identity fingerprints (base-station persisted view) ----
+// Lists the base's durable fingerprint records (peak MAC count + latched
+// ever-rotating flag). Base-only, like History: the tab reveals itself once
+// /api/summary confirms a --history base, and refreshes on a slow timer.
+let fpInited = false, fpAvailable = false, fpRows = [];
+async function initFingerprints() {
+  if (fpInited) return;
+  if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+  try {
+    const s = await apiGet('/api/summary');
+    if (!s || !s.history) return;
+  } catch (e) { return; }
+  fpInited = true; fpAvailable = true;
+  const tab = $('tabFingerprints'); if (tab) tab.style.display = '';
+  $('fpPlaceholder').style.display = 'none';
+  $('fpSection').style.display = 'block';
+  loadFingerprints();
+  setInterval(() => { if (fpAvailable) loadFingerprints(); }, 15000);
+}
+
+async function loadFingerprints() {
+  try { fpRows = await apiGet('/api/fingerprints'); } catch (e) { return; }
+  $('fpCountLabel').textContent = fpRows.length ? '(' + fpRows.length + ')' : '';
+  renderFingerprints();
+}
+
+function renderFingerprints() {
+  const tb = $('fpTable').querySelector('tbody');
+  const term = ($('fpSearch').value || '').trim().toLowerCase();
+  let rows = fpRows;
+  if (term) rows = rows.filter(r =>
+    (r.fpid || '').toLowerCase().includes(term) ||
+    (r.name || '').toLowerCase().includes(term) ||
+    (r.company || '').toLowerCase().includes(term));
+  if (!rows.length) {
+    tb.innerHTML = '<tr><td colspan="6" class="empty">' +
+      (term ? 'No fingerprints match “' + escapeHtml(term) + '”.'
+            : 'No fingerprints recorded yet — start a BLE scan and give devices time to rotate.') +
+      '</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(r => {
+    const rotating = !!r.ever_rotating;
+    const name = r.name ? escapeHtml(r.name) : '<span class="empty">(no name)</span>';
+    const vendor = r.company ? escapeHtml(r.company) : '<span class="empty">?</span>';
+    const status = rotating
+      ? '<span class="badge badge-gone">ROTATING</span>'
+      : (r.peak_macs >= 2 ? '<span class="mac">' + r.peak_macs + ' MACs</span>'
+                          : '<span class="empty">stable</span>');
+    const rssi = (r.best_rssi != null) ? r.best_rssi : '';
+    const rssiCls = (rssi === '') ? '' : rssiClass(rssi);
+    return `<tr>` +
+      `<td>${name}<div class="mac">${r.fpid}</div></td>` +
+      `<td>${vendor}</td>` +
+      `<td>${r.peak_macs}</td>` +
+      `<td>${status}</td>` +
+      `<td class="${rssiCls}">${rssi}</td>` +
+      `<td>${timeAgo(r.last_seen)}</td></tr>`;
+  }).join('');
+}
+
+// ---- Watchlist / pattern-of-life (base-station only) ----
+// Ranks persistent devices from /api/watchlist. "Mute" hides your own known
+// devices client-side (localStorage) so only the unfamiliar remain; the ★ reuses
+// the History watch flag to alert when a device reappears.
+let watchInited = false, watchAvailable = false, watchRows = [];
+let watchMuted = new Set(JSON.parse(localStorage.getItem('watchMuted') || '[]'));
+
+const _KIND_LABEL = { ble: 'BLE', sta: 'STA', ap: 'AP' };
+function watchKey(kind, addr) { return kind + '|' + addr; }
+function isMuted(kind, addr) { return watchMuted.has(watchKey(kind, addr)); }
+function saveMuted() { localStorage.setItem('watchMuted', JSON.stringify([...watchMuted])); }
+window.watchToggleMute = function (kind, addr) {
+  const k = watchKey(kind, addr);
+  if (watchMuted.has(k)) watchMuted.delete(k); else watchMuted.add(k);
+  saveMuted();
+  if (watchInited) renderWatchlist();
+  if (followedInited) renderFollowed();   // mute is shared across both analytics tabs
+};
+window.watchStar = async function (kind, addr, on) {
+  // reflect immediately in whichever analytics lists hold this device, then persist
+  [watchRows, followedRows].forEach(list => {
+    const r = list.find(x => x.kind === kind && x.addr === addr);
+    if (r) r.watched = on;
+  });
+  if (watchInited) renderWatchlist();
+  if (followedInited) renderFollowed();
+  await histToggleWatch(kind, addr, on);
+};
+
+async function initWatchlist() {
+  if (watchInited) return;
+  if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+  try {
+    const s = await apiGet('/api/summary');
+    if (!s || !s.history) return;
+  } catch (e) { return; }
+  watchInited = true; watchAvailable = true;
+  const tab = $('tabWatch'); if (tab) tab.style.display = '';
+  loadWatchlist();
+  setInterval(() => { if (watchAvailable) loadWatchlist(); }, 30000);
+}
+
+async function loadWatchlist() {
+  try { watchRows = await apiGet('/api/watchlist?days=14'); } catch (e) { return; }
+  renderWatchlist();
+}
+
+// Compact hour-of-day histogram as an inline SVG (24 bars, normalized).
+function hourSparkline(hours) {
+  const max = Math.max(1, ...hours);
+  const W = 120, H = 22, bw = W / 24;
+  const bars = hours.map((c, i) => {
+    const h = Math.max(c > 0 ? 1 : 0, Math.round((c / max) * (H - 2)));
+    return `<rect x="${(i * bw).toFixed(1)}" y="${(H - h).toFixed(1)}" width="${(bw - 0.6).toFixed(1)}" height="${h}" fill="var(--accent)"/>`;
+  }).join('');
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="vertical-align:middle;">${bars}</svg>`;
+}
+
+function renderWatchlist() {
+  const tb = $('watchTable').querySelector('tbody');
+  const kindSel = $('watchKind').value;
+  const showMuted = $('watchShowMuted').checked;
+  const kindOk = r => kindSel === 'all' ? true
+    : kindSel === 'person' ? (r.kind === 'ble' || r.kind === 'sta')
+    : r.kind === kindSel;
+  let rows = watchRows.filter(kindOk);
+  const mutedInView = rows.filter(r => isMuted(r.kind, r.addr)).length;
+  if (!showMuted) rows = rows.filter(r => !isMuted(r.kind, r.addr));
+  $('watchCount').textContent = rows.length ? '(' + rows.length + ')' : '';
+  $('watchMutedCount').textContent = mutedInView ? '(' + mutedInView + ')' : '';
+  if (!rows.length) {
+    tb.innerHTML = '<tr><td colspan="6" class="empty">' +
+      (watchRows.length ? 'Nothing here — everything matching is muted, or no history yet.'
+                        : 'Give the base station time to build up history; persistent devices appear here.') +
+      '</td></tr>';
+    setTabBadge('tabBadgeWatch', 0);
+    return;
+  }
+  tb.innerHTML = rows.map(r => {
+    const label = r.name || r.ssid || '<span class="empty">(unnamed)</span>';
+    const sub = escapeHtml(r.addr) + (r.mfg ? ' · ' + escapeHtml(r.mfg) : '');
+    const kb = _KIND_LABEL[r.kind] || r.kind;
+    const dot = r.present ? '<span class="dot on" title="present now"></span>' : '';
+    const muted = isMuted(r.kind, r.addr);
+    const star = r.watched ? '★' : '☆';
+    const last = r.last_sight ? timeAgo(r.last_sight) : '—';
+    return `<tr style="${muted ? 'opacity:.5;' : ''}">` +
+      `<td>${dot}${typeof label === 'string' && label[0] !== '<' ? escapeHtml(label) : label}` +
+      `<div class="mac">${sub} <span style="border:1px solid var(--panel-border); border-radius:3px; padding:0 3px; font-size:9px;">${kb}</span></div></td>` +
+      `<td><b>${r.distinct_days}</b></td>` +
+      `<td>${r.sightings}</td>` +
+      `<td>${hourSparkline(r.hours || [])}</td>` +
+      `<td>${last}</td>` +
+      `<td style="white-space:nowrap;">` +
+        `<span class="star" title="Alert when this device reappears" onclick="watchStar('${r.kind}','${r.addr}',${r.watched ? 0 : 1})">${star}</span> ` +
+        `<span class="star" title="${muted ? 'Un-mute' : 'Mute (your own known device)'}" onclick="watchToggleMute('${r.kind}','${r.addr}')">${muted ? '🔔' : '🔕'}</span>` +
+      `</td></tr>`;
+  }).join('');
+  // Badge: persistent (>=3 distinct days) unmuted unknowns worth a look.
+  const flag = rows.filter(r => !r.watched && r.distinct_days >= 3).length;
+  setTabBadge('tabBadgeWatch', flag);
+}
+
+// ---- Followed-across-places (geo co-location, base-station only) ----
+// Devices sighted at 2+ distinct clustered locations (from /api/colocation).
+// Shares the Watchlist mute set so your own devices (which travel with you) can
+// be hidden. Selecting a row plots its place centroids.
+let followedInited = false, followedAvailable = false, followedRows = [];
+
+async function initFollowed() {
+  if (followedInited) return;
+  if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+  try {
+    const s = await apiGet('/api/summary');
+    if (!s || !s.history) return;
+  } catch (e) { return; }
+  followedInited = true; followedAvailable = true;
+  const tab = $('tabFollowed'); if (tab) tab.style.display = '';
+  loadFollowed();
+  setInterval(() => { if (followedAvailable) loadFollowed(); }, 30000);
+}
+
+async function loadFollowed() {
+  try { followedRows = await apiGet('/api/colocation?days=14'); } catch (e) { return; }
+  renderFollowed();
+}
+
+function fmtDist(m) {
+  if (m == null) return '—';
+  return m < 1000 ? m + ' m' : (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' km';
+}
+
+// Scatter the place centroids in a small SVG (equirectangular, aspect-corrected),
+// dot area ~ sighting count. Conveys "these places are far apart" at a glance.
+function placeScatter(locs) {
+  const W = 150, H = 120, pad = 14;
+  if (!locs || locs.length === 0) return '';
+  const meanLat = locs.reduce((a, l) => a + l.lat, 0) / locs.length;
+  const k = Math.cos(meanLat * Math.PI / 180) || 1;
+  const xs = locs.map(l => l.lon * k), ys = locs.map(l => l.lat);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const sx = v => (x1 === x0) ? W / 2 : pad + (v - x0) / (x1 - x0) * (W - 2 * pad);
+  const sy = v => (y1 === y0) ? H / 2 : H - (pad + (v - y0) / (y1 - y0) * (H - 2 * pad));
+  const maxc = Math.max(...locs.map(l => l.count));
+  const dots = locs.map((l, i) => {
+    const r = 4 + 6 * Math.sqrt(l.count / maxc);
+    return `<circle cx="${sx(l.lon * k).toFixed(1)}" cy="${sy(l.lat).toFixed(1)}" r="${r.toFixed(1)}" ` +
+      `fill="var(--accent)" fill-opacity="0.55" stroke="var(--accent)"/>` +
+      `<text x="${sx(l.lon * k).toFixed(1)}" y="${(sy(l.lat) + 3).toFixed(1)}" text-anchor="middle" ` +
+      `font-size="9" fill="var(--text)">${i + 1}</text>`;
+  }).join('');
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" ` +
+    `style="border:1px solid var(--panel-border); border-radius:4px; background:var(--panel);">${dots}</svg>`;
+}
+
+window.followedSelect = function (id) {
+  const r = followedRows.find(x => x.id === id);
+  if (!r) return;
+  $('followedDetail').style.display = 'block';
+  $('followedDetailLabel').textContent = r.name || r.ssid || r.addr;
+  $('followedDetailSpan').textContent = r.location_count + ' places · spanning ' + fmtDist(r.span_m);
+  $('followedPlot').innerHTML = placeScatter(r.locations);
+  $('followedPlaces').innerHTML = (r.locations || []).map((l, i) =>
+    `<div><b>${i + 1}.</b> ${l.lat.toFixed(4)}, ${l.lon.toFixed(4)} ` +
+    `<span class="empty">· ${l.count}×· last ${timeAgo(l.last_ts)}</span></div>`).join('');
+};
+
+function renderFollowed() {
+  const tb = $('followedTable').querySelector('tbody');
+  let rows = followedRows.filter(r => !isMuted(r.kind, r.addr));
+  $('followedCount').textContent = rows.length ? '(' + rows.length + ')' : '';
+  setTabBadge('tabBadgeFollowed', rows.filter(r => !r.watched).length);
+  if (!rows.length) {
+    tb.innerHTML = '<tr><td colspan="6" class="empty">' +
+      (followedRows.length ? 'All matching devices are muted.'
+                           : 'No cross-location devices yet — stream your location (Finder mode) while scanning to build this.') +
+      '</td></tr>';
+    $('followedDetail').style.display = 'none';
+    return;
+  }
+  tb.innerHTML = rows.map(r => {
+    const label = r.name || r.ssid || '<span class="empty">(unnamed)</span>';
+    const kb = _KIND_LABEL[r.kind] || r.kind;
+    const dot = r.present ? '<span class="dot on" title="present now"></span>' : '';
+    const muted = isMuted(r.kind, r.addr);
+    const star = r.watched ? '★' : '☆';
+    return `<tr style="cursor:pointer;" onclick="followedSelect(${r.id})">` +
+      `<td>${dot}${label[0] !== '<' ? escapeHtml(label) : label}` +
+      `<div class="mac">${escapeHtml(r.addr)} <span style="border:1px solid var(--panel-border); border-radius:3px; padding:0 3px; font-size:9px;">${kb}</span></div></td>` +
+      `<td><b>${r.location_count}</b></td>` +
+      `<td>${fmtDist(r.span_m)}</td>` +
+      `<td>${r.total_geo}</td>` +
+      `<td>${r.last_seen ? timeAgo(r.last_seen) : '—'}</td>` +
+      `<td style="white-space:nowrap;" onclick="event.stopPropagation()">` +
+        `<span class="star" title="Alert when this device reappears" onclick="watchStar('${r.kind}','${r.addr}',${r.watched ? 0 : 1})">${star}</span> ` +
+        `<span class="star" title="${muted ? 'Un-mute' : 'Mute (your own device)'}" onclick="watchToggleMute('${r.kind}','${r.addr}')">${muted ? '🔔' : '🔕'}</span>` +
+      `</td></tr>`;
+  }).join('');
+}
+
+// ---- Network / WiFi provisioning (base-station only) ----
+// Re-home the Pi onto a new WiFi from the GUI. Reveals itself when /api/net/status
+// answers. The join intentionally drops this page (single radio), so netConnect
+// fires the request and warns the user rather than awaiting a reply.
+let netInited = false, netAvailable = false;
+
+async function initNetwork() {
+  if (netInited) return;
+  if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+  try { await apiGet('/api/net/status'); } catch (e) { return; }
+  netInited = true; netAvailable = true;
+  const tab = $('tabNetwork'); if (tab) tab.style.display = '';
+  netRefreshStatus();
+  setInterval(() => { if (netAvailable && activeTab() === 'net') netRefreshStatus(); }, 8000);
+}
+
+async function netRefreshStatus() {
+  let s; try { s = await apiGet('/api/net/status'); } catch (e) { return; }
+  const cur = s.label ? (s.label + (s.ip ? ' · ' + s.ip : '')) : 'not connected';
+  $('netCurrent').textContent = '(' + cur + ')';
+  if (s.last) {   // outcome of the most recent join, shown once you're reconnected
+    const box = $('netResult'); box.style.display = 'block';
+    if (s.last.ok === true) { box.textContent = '✓ ' + s.last.msg; box.style.color = 'var(--accent)'; }
+    else if (s.last.ok === false) { box.textContent = '✗ ' + s.last.msg + ' — rejoin aries-hotspot and retry.'; box.style.color = 'var(--danger)'; }
+    else { box.textContent = '… ' + s.last.msg; box.style.color = ''; }
+  }
+}
+
+async function netConnect() {
+  const ssid = ($('netManualSsid').value || '').trim();
+  if (!ssid) { $('netManualSsid').focus(); return; }
+  const pass = $('netManualPass').value || '';
+  const box = $('netResult'); box.style.display = 'block'; box.style.color = '';
+  box.textContent = 'Joining “' + ssid + '”… this page will disconnect as the hotspot drops. ' +
+    'Reconnect your phone to “' + ssid + '” (or Tailscale) in ~20s, then reopen aries.local:8080 ' +
+    'and check the Network tab for the result.';
+  try {
+    await fetch('/api/net/connect', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+      body: JSON.stringify({ ssid: ssid, password: pass }),
+    });
+  } catch (e) { /* expected — the radio switch tears down this very connection */ }
+}
+
 function timeAgo(ts) {
   const s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
   if (s < 60) return s + 's';
@@ -1478,6 +1918,11 @@ function sparkline(pts) {
 });
 if ($('histSearch')) $('histSearch').addEventListener('input', renderDevices);
 if ($('probeSearch')) $('probeSearch').addEventListener('input', renderProbes);
+if ($('fpSearch')) $('fpSearch').addEventListener('input', renderFingerprints);
+if ($('watchKind')) $('watchKind').addEventListener('change', renderWatchlist);
+if ($('watchShowMuted')) $('watchShowMuted').addEventListener('change', renderWatchlist);
+if ($('btnNetManual')) $('btnNetManual').addEventListener('click', netConnect);
+if ($('netManualPass')) $('netManualPass').addEventListener('keydown', e => { if (e.key === 'Enter') netConnect(); });
 if ($('btnClearAlerts')) {
   $('btnClearAlerts').addEventListener('click', () => {
     $('alertFeed').innerHTML = '<div class="empty">No alerts yet.</div>';
@@ -1932,6 +2377,10 @@ function refreshTabBadges() {
   setTabBadge('tabBadgeProbes', num('statProbe'));
   if (!tagsInited) initTags(); // reveal the Tags tab if the app bridge arrived late
   if (!finderInited) initFinder(); // same late-reveal for the Finder tab
+  if (!fpInited) initFingerprints(); // reveal Fingerprints once the base API answers
+  if (!watchInited) initWatchlist(); // reveal Watchlist once the base API answers
+  if (!followedInited) initFollowed(); // reveal Followed once the base API answers
+  if (!netInited) initNetwork(); // reveal Network once /api/net answers
 }
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
   const name = t.dataset.tab;
@@ -1943,6 +2392,10 @@ document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () =>
 setInterval(refreshTabBadges, 1500);
 
 initHistory();
+initFingerprints();
+initWatchlist();
+initFollowed();
+initNetwork();
 initTags();
 initFinder();
 </script>
