@@ -847,11 +847,13 @@ window.captureStart = async function (idx) {
     return;
   }
   const row = lastApRows.find(r => r.idx === idx);
+  const durEl = $('dur-' + idx);
+  const dur = Math.max(1, Math.min(120, +(durEl && durEl.value) || 60));
   const label = row ? ((row.ssid || '(hidden)') + ' (' + row.bssid + ')') : ('AP #' + idx);
-  const ok = confirm(`Capture 60s of ${label} to a .pcap on the SD card?\n\n` +
+  const ok = confirm(`Capture ${dur}s of ${label} to a .pcap on the SD card?\n\n` +
     `Only this network's frames are recorded. Proceed only if you own or are authorized to test it.`);
   if (!ok) return;
-  await sendCommand('pcap ' + idx + ' 60');
+  await sendCommand('pcap ' + idx + ' ' + dur);
   const t = document.querySelector('.tab[data-tab="capture"]'); if (t) t.click();
 };
 
@@ -1056,8 +1058,8 @@ function parseApList(lines) {
       <td class="${r.sec === 'open' ? 'tag-open' : 'tag-enc'}">${r.sec}</td>
       <td>
         <div class="row-actions">
-          <button onclick="captureStart(${r.idx})" title="Capture only this AP's frames to a .pcap (60s)">Cap</button>
-          <input type="number" min="1" max="60" value="20" id="dur-${r.idx}" title="seconds">
+          <button onclick="captureStart(${r.idx})" title="Capture only this AP's frames to a .pcap (uses the seconds box, default 60)">Cap</button>
+          <input type="number" min="1" max="120" value="60" id="dur-${r.idx}" title="seconds (Cap + Deauth), max 120">
           <button class="danger" onclick="deauthAp(${r.idx})" ${armed ? '' : 'disabled title="Arm deauth first"'}>Deauth</button>
         </div>
       </td>
@@ -1093,7 +1095,7 @@ function parseStaList(lines) {
     } else {
       const dis = armed ? '' : 'disabled title="Arm deauth first"';
       deauthCell =
-        `<input type="number" min="1" max="60" value="20" id="${durId}" title="seconds">
+        `<input type="number" min="1" max="120" value="60" id="${durId}" title="seconds, max 120">
            <button class="danger" onclick="deauthStation(${apRow.idx}, '${r.mac}')" ${dis}>Deauth</button>`;
     }
     return `
@@ -1188,7 +1190,7 @@ window.deauthAp = async function (idx) {
   if (!armed) { alert('Arm deauth first (check the authorization box, then click "Arm Deauth").'); return; }
   const row = lastApRows.find(r => r.idx === idx);
   const durEl = $('dur-' + idx);
-  const dur = Math.max(1, Math.min(60, +durEl.value || 20));
+  const dur = Math.max(1, Math.min(120, +durEl.value || 60));
   const label = row ? `${row.ssid || '(hidden)'} (${row.bssid})` : `AP #${idx}`;
   const ok = confirm(
     `Send deauth to ALL clients of ${label} for ${dur}s?\n\n` +
@@ -1201,7 +1203,7 @@ window.deauthAp = async function (idx) {
 window.deauthStation = async function (apIdx, mac) {
   if (!armed) { alert('Arm deauth first (check the authorization box, then click "Arm Deauth").'); return; }
   const durEl = $('sdur-' + mac.replace(/:/g, ''));
-  const dur = Math.max(1, Math.min(60, +(durEl && durEl.value) || 20));
+  const dur = Math.max(1, Math.min(120, +(durEl && durEl.value) || 60));
   const ok = confirm(
     `Send a targeted (unicast) deauth to station ${mac} on AP #${apIdx} for ${dur}s?\n\n` +
     `This hits the client and the AP in both directions. Only proceed if you own ` +
