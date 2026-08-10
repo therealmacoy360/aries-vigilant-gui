@@ -293,16 +293,16 @@
   <div class="panel">
     <h2>Access Points <span id="apCountLabel"></span></h2>
     <table id="apTable">
-      <thead><tr><th>#</th><th>SSID</th><th>BSSID</th><th>Ch</th><th>Band</th><th>RSSI</th><th>Sec</th><th>Deauth</th></tr></thead>
-      <tbody><tr><td colspan="8" class="empty">Connect and click "Start Scan" to discover networks.</td></tr></tbody>
+      <thead><tr><th>#</th><th>SSID</th><th>BSSID</th><th>Vendor</th><th>Ch</th><th>Band</th><th>RSSI</th><th>Sec</th><th>Deauth</th></tr></thead>
+      <tbody><tr><td colspan="9" class="empty">Connect and click "Start Scan" to discover networks.</td></tr></tbody>
     </table>
   </div>
 
   <div class="panel">
     <h2>Stations <span id="staCountLabel"></span></h2>
     <table id="staTable">
-      <thead><tr><th>MAC</th><th>AP</th><th>RSSI</th><th>Deauth</th></tr></thead>
-      <tbody><tr><td colspan="4" class="empty">No stations discovered yet.</td></tr></tbody>
+      <thead><tr><th>MAC</th><th>Vendor</th><th>AP</th><th>RSSI</th><th>Deauth</th></tr></thead>
+      <tbody><tr><td colspan="5" class="empty">No stations discovered yet.</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -632,6 +632,7 @@ async function connect() {
     setConnected(true);
     log('[connected via ' + transport.kind + ']');
     initHistory();   // token is satisfied now -- light up history if the base has it
+    loadOui();       // fetch the vendor map once (served by the base) for labeling
   } catch (e) {
     log('[connect failed] ' + e.message);
   }
@@ -1005,6 +1006,33 @@ function rssiClass(rssi) {
   return 'rssi-weak';
 }
 
+// ---- OUI vendor enrichment ----
+// The base serves a compact IEEE OUI->vendor map at /oui.json; fetch it once and
+// cache it, then label APs/stations by manufacturer. A locally-administered
+// (randomized) MAC has no real OUI, so it's called out as such instead of a bogus
+// lookup. Falls back gracefully (— / randomized) when no base is serving the map.
+let ouiMap = null, ouiTried = false;
+async function loadOui() {
+  if (ouiMap || ouiTried) return;
+  ouiTried = true;
+  try {
+    const r = await fetch('oui.json', { headers: authHeaders() });
+    if (r.ok) ouiMap = await r.json(); // next list auto-refresh renders vendors
+  } catch (e) { /* standalone / no base -- randomized-only labeling */ }
+}
+function isRandomMac(mac) {
+  // bit 1 (0x02) of the first octet = locally administered => randomized/private
+  const b = parseInt(String(mac).slice(0, 2), 16);
+  return !isNaN(b) && (b & 0x02) === 0x02;
+}
+function ouiVendor(mac) {
+  if (!mac) return '';
+  if (isRandomMac(mac)) return '<span class="empty" title="Locally-administered (randomized/private) MAC — no real vendor">randomized</span>';
+  const p = String(mac).replace(/:/g, '').slice(0, 6).toUpperCase();
+  const v = ouiMap && ouiMap[p];
+  return v ? escapeHtml(v) : '<span class="empty">—</span>';
+}
+
 let lastApRows = [];
 let lastProbeRows = [];
 
@@ -1039,7 +1067,7 @@ function parseApList(lines) {
   const tbody = $('apTable').querySelector('tbody');
   if (tableHasFocus('apTable')) return; // don't clobber active interaction
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">No APs found yet. Try "Start Scan" and wait a few seconds.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">No APs found yet. Try "Start Scan" and wait a few seconds.</td></tr>';
     return;
   }
   const savedInputs = captureInputs('apTable');
@@ -1052,6 +1080,7 @@ function parseApList(lines) {
       <td>${r.idx}</td>
       <td>${escapeHtml(r.ssid) || '<span class="empty">(hidden)</span>'}</td>
       <td class="mac">${r.bssid}</td>
+      <td>${ouiVendor(r.bssid)}</td>
       <td>${r.ch}</td>
       <td class="${bandCls}">${band}</td>
       <td class="${rssiClass(r.rssi)}">${r.rssi}</td>
@@ -1080,7 +1109,7 @@ function parseStaList(lines) {
   const tbody = $('staTable').querySelector('tbody');
   if (tableHasFocus('staTable')) return; // don't clobber active interaction
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty">No stations discovered yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">No stations discovered yet.</td></tr>';
     return;
   }
   const savedInputs = captureInputs('staTable');
@@ -1101,6 +1130,7 @@ function parseStaList(lines) {
     return `
     <tr>
       <td class="mac">${r.mac}</td>
+      <td>${ouiVendor(r.mac)}</td>
       <td class="mac">${r.ap}</td>
       <td class="${rssiClass(r.rssi)}">${r.rssi}</td>
       <td><div class="row-actions">${deauthCell}</div></td>
