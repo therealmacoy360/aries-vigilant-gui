@@ -124,14 +124,14 @@
     0%, 49%  { background: var(--danger); color: #fff; }
     50%, 100% { background: transparent; color: var(--danger); }
   }
-  #spamTile.alert, #rotTile.alert, #wifiSpamTile.alert {
+  #spamTile.alert, #rotTile.alert, #wifiSpamTile.alert, #threatsTile.alert {
     animation: spamFlash 0.7s steps(1, end) infinite;
     border-radius: 4px;
     padding: 2px 6px;
     margin: -2px -6px;
   }
-  #spamTile.alert .label, #rotTile.alert .label, #wifiSpamTile.alert .label,
-  #spamTile.alert .value, #rotTile.alert .value, #wifiSpamTile.alert .value { color: inherit; }
+  #spamTile.alert .label, #rotTile.alert .label, #wifiSpamTile.alert .label, #threatsTile.alert .label,
+  #spamTile.alert .value, #rotTile.alert .value, #wifiSpamTile.alert .value, #threatsTile.alert .value { color: inherit; }
 
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
   th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--panel-border); }
@@ -193,6 +193,8 @@
   }
 
   .empty { color: var(--text-dim); font-style: italic; }
+  .ok { color: var(--accent); font-weight: bold; }
+  .gps-line { font-size: 11px; color: var(--text-dim); font-family: var(--mono); margin-top: 8px; }
   .footnote { color: var(--text-dim); font-size: 10.5px; margin-top: 16px; line-height: 1.5; }
 
   /* History / presence (base-station mode) */
@@ -245,6 +247,7 @@
 <div id="deauthBanner" class="deauth-banner">⚠ DEAUTH ACTIVE — <span id="deauthText"></span></div>
 <div id="spamBanner" class="spam-banner">📡 BLE PAIRING-SPAM DETECTED — <span id="spamText"></span></div>
 <div id="wifiSpamBanner" class="spam-banner">📶 WiFi BEACON-SPAM DETECTED — <span id="wifiSpamText"></span></div>
+<div id="threatBanner" class="spam-banner">🚨 INCOMING DEAUTH — <span id="threatText"></span></div>
 
 <div class="panel" style="margin-bottom:16px;">
   <h2>Status</h2>
@@ -257,6 +260,7 @@
     <div class="stat" id="rotTile"><span class="label">Rotating</span><span class="value" id="statRot">—</span></div>
     <div class="stat" id="spamTile"><span class="label">Spam Watch</span><span class="value" id="statSpam">—</span></div>
     <div class="stat" id="wifiSpamTile"><span class="label">WiFi Spam</span><span class="value" id="statWifiSpam">—</span></div>
+    <div class="stat" id="threatsTile"><span class="label">Threats</span><span class="value" id="statThreats">—</span></div>
     <div class="stat"><span class="label">Channel</span><span class="value" id="statCh">—</span></div>
     <div class="stat"><span class="label">Packets</span><span class="value" id="statPkts">—</span></div>
     <div class="stat"><span class="label">Logging</span><span class="value" id="statLog">—</span></div>
@@ -422,6 +426,7 @@
     briefly <b>Deauth</b> a client to force a WPA handshake. Only capture networks you own or are
     explicitly authorized to test.</p>
   <div id="captureStatus" class="gps-line" style="font-size:13px;">No capture running.</div>
+  <div id="captureCrack" style="font-size:12px; margin-top:6px;"></div>
   <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
     <button id="btnCaptureStop" class="danger" disabled>Stop capture</button>
     <button id="btnCaptureDownload" disabled>Download .pcap</button>
@@ -866,7 +871,7 @@ function captureDownload() {
   sendCommand('download ' + captureFile);
 }
 
-function updateCaptureStatus(active, file, frames, dropped, left) {
+function updateCaptureStatus(active, file, frames, dropped, left, crack) {
   captureActive = active;
   if (file) captureFile = file;
   const el = $('captureStatus');
@@ -875,6 +880,16 @@ function updateCaptureStatus(active, file, frames, dropped, left) {
       ? `● Capturing ${file || captureFile} — ${frames} frames, ${dropped} dropped, ${left}s left`
       : (captureFile ? `Idle. Last capture: ${captureFile} (${frames} frames)` : 'No capture running.');
     el.style.color = active ? 'var(--danger)' : '';
+  }
+  // Crackable-material readout: the payoff of a capture is whether it actually
+  // caught a WPA handshake or a PMKID (passive). Show it prominently.
+  const ce = $('captureCrack');
+  if (ce && crack) {
+    const parts = [];
+    if (crack.hs) parts.push('<span class="ok">✓ WPA handshake</span>');
+    if (crack.pmkid) parts.push('<span class="ok">✓ PMKID</span>');
+    if (!parts.length) parts.push(`<span class="empty">no handshake yet (eapol ${crack.eapol}) — deauth a client to force one</span>`);
+    ce.innerHTML = 'Crackable: ' + parts.join(' · ');
   }
   const badge = $('captureBadge'); if (badge) badge.textContent = active ? '● recording' : '';
   const tb = $('tabBadgeCapture');
@@ -980,6 +995,29 @@ function parseStatus(lines) {
       if (detected) $('wifiSpamText').textContent =
         `${newSsids} new SSIDs from ${newBssids} new BSSIDs in the last window (${dets} detection${dets === '1' ? '' : 's'} this session)`;
     }
+    m = l.match(/Threats: karma: (\w+)\/(\d+) \| twins: (\d+)( SUSPICIOUS)? \| deauth-rx: (\w+) (\d+)/);
+    if (m) {
+      const karma = m[1] === 'YES', karmaN = +m[2], twins = +m[3], twinSusp = !!m[4];
+      const deauthd = m[5] === 'FLOOD', deauthTot = +m[6];
+      const active = deauthd || karma || twinSusp;
+      let txt;
+      if (!wifiOn) txt = 'scan off';
+      else if (deauthd) txt = "⚠ deauth'd";
+      else if (karma) txt = `⚠ karma (${karmaN})`;
+      else if (twinSusp) txt = '⚠ rogue AP';
+      else if (twins > 0) txt = `${twins} twin${twins === 1 ? '' : 's'}`;
+      else txt = 'clear';
+      $('statThreats').textContent = txt;
+      $('statThreats').style.color = active ? '' : (!wifiOn ? 'var(--text-dim)' : '');
+      $('threatsTile').classList.toggle('alert', active);
+      $('statThreats').title =
+        `Karma (1 AP, many SSIDs): ${karma ? 'DETECTED, ' + karmaN + ' SSIDs' : 'clear'}\n` +
+        `Evil-twin (SSID on multiple BSSIDs): ${twins}${twinSusp ? ' — open+encrypted clone (suspicious)' : ''}\n` +
+        `Incoming deauth: ${deauthd ? 'UNDER ATTACK' : 'clear'} (${deauthTot} seen this session)`;
+      $('threatBanner').classList.toggle('active', deauthd);
+      if (deauthd) $('threatText').textContent =
+        `a deauth/disassoc burst is hitting devices nearby (${deauthTot} frames seen this session)`;
+    }
     m = l.match(/BLE fingerprints: (\d+) \| rotating: (\d+)/);
     if (m) {
       const total = +m[1], rot = +m[2];
@@ -990,8 +1028,9 @@ function parseStatus(lines) {
       $('statRot').title = 'Devices rotating their MAC / total fingerprints in range';
       setTabBadge('tabBadgeFp', rot);
     }
-    m = l.match(/Capture: (\w+) \| file: (\S+) \| frames: (\d+) \| dropped: (\d+) \| left: (\d+)s/);
-    if (m) updateCaptureStatus(m[1] === 'ACTIVE', m[2] === '-' ? '' : m[2], +m[3], +m[4], +m[5]);
+    m = l.match(/Capture: (\w+) \| file: (\S+) \| frames: (\d+) \| dropped: (\d+) \| left: (\d+)s(?: \| eapol: (\d+) \| hs: (\w+) \| pmkid: (\w+))?/);
+    if (m) updateCaptureStatus(m[1] === 'ACTIVE', m[2] === '-' ? '' : m[2], +m[3], +m[4], +m[5],
+      { eapol: +m[6] || 0, hs: m[7] === 'yes', pmkid: m[8] === 'yes' });
     m = l.match(/Debug: ch=(\d+) total_pkts=(\d+) mgmt=(\d+) data=(\d+) beacon\/probe=(\d+)/);
     if (m) {
       $('statCh').textContent = m[1];
