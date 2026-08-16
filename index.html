@@ -228,6 +228,14 @@
   .hist-search { width: 100%; box-sizing: border-box; margin-bottom: 8px; background: #000; color: var(--text); border: 1px solid var(--panel-border); border-radius: 4px; padding: 6px 8px; font-family: var(--mono); font-size: 12px; }
   .hist-search:focus { outline: none; border-color: var(--accent); }
   .table-scroll { max-height: 340px; overflow-y: auto; }
+  /* Pattern-of-life heatmap: weekday rows x hour columns. */
+  table.heatmap { border-collapse: separate; border-spacing: 2px; width: auto; }
+  table.heatmap th { font-weight: normal; color: var(--text-dim); font-size: 10px;
+    padding: 0 4px; text-align: right; white-space: nowrap; }
+  table.heatmap thead th { text-align: center; padding: 0; }
+  table.heatmap td { width: 13px; height: 13px; padding: 0; border-radius: 2px;
+    background: var(--panel); }
+  table.heatmap td.hot { outline: 1px solid var(--accent); }
   .table-scroll thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
 
 </style>
@@ -383,6 +391,18 @@
       <option value="ap">APs only</option>
     </select>
     <label style="font-size:11px;"><input type="checkbox" id="watchShowMuted"> show muted <span id="watchMutedCount" class="empty"></span></label>
+  </div>
+  <div id="heatmapWrap" style="margin:4px 0 16px;">
+    <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;">
+      <h3 style="margin:0; font-size:13px;">Pattern of life <span id="heatmapScope" class="mac"></span></h3>
+      <span id="heatmapClear" class="star" style="display:none; font-size:11px; cursor:pointer;" onclick="heatmapClearFocus()">✕ clear focus</span>
+    </div>
+    <p class="empty" style="margin:2px 0 8px; font-size:11px; line-height:1.5;">
+      When there's activity, by weekday and hour (local time, last 14 days). Darker = busier.
+      Overall it's <b>distinct devices</b> per slot; click a device below to see just <b>its</b> weekly rhythm.</p>
+    <div class="table-scroll">
+      <table id="heatmap" class="heatmap"><tbody></tbody></table>
+    </div>
   </div>
   <div class="table-scroll">
     <table id="watchTable">
@@ -1486,7 +1506,73 @@ async function initWatchlist() {
 async function loadWatchlist() {
   try { watchRows = await apiGet('/api/watchlist?days=14'); } catch (e) { return; }
   renderWatchlist();
+  loadHeatmap();
 }
+
+// ---- Pattern-of-life heatmap (weekday x hour) ----
+let heatmapAddr = null, heatmapKind = null, heatmapLabel = '';
+const _DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// --accent as "r,g,b" so cells can vary alpha by intensity.
+let _accentRgb = null;
+function accentRgb() {
+  if (_accentRgb) return _accentRgb;
+  const hex = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  _accentRgb = m ? `${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)}` : '61,220,132';
+  return _accentRgb;
+}
+
+async function loadHeatmap() {
+  const q = ['days=14'];
+  if (heatmapAddr) { q.push('kind=' + encodeURIComponent(heatmapKind), 'addr=' + encodeURIComponent(heatmapAddr)); }
+  else { const k = $('watchKind').value; if (k) q.push('kind=' + encodeURIComponent(k)); }
+  let data;
+  try { data = await apiGet('/api/heatmap?' + q.join('&')); } catch (e) { return; }
+  renderHeatmap(data);
+}
+
+function renderHeatmap(data) {
+  const tb = $('heatmap').querySelector('tbody');
+  const scope = $('heatmapScope'), clear = $('heatmapClear');
+  if (heatmapAddr) { scope.textContent = '· ' + heatmapLabel; clear.style.display = ''; }
+  else { scope.textContent = ''; clear.style.display = 'none'; }
+  const grid = (data && data.grid) || [], max = (data && data.max) || 0;
+  if (!max) {
+    tb.innerHTML = '<tr><td colspan="25" class="empty" style="background:none;width:auto;height:auto;">' +
+      'No activity recorded in this window yet.</td></tr>';
+    return;
+  }
+  const rgb = accentRgb();
+  // Header: hour ticks every 3h across 24 columns.
+  let head = '<tr><th></th>';
+  for (let h = 0; h < 24; h++) head += '<th>' + (h % 3 === 0 ? h : '') + '</th>';
+  head += '</tr>';
+  const body = grid.map((row, dow) => {
+    const cells = row.map((c, h) => {
+      const a = c === 0 ? 0 : (0.15 + 0.85 * (c / max)).toFixed(2);
+      const bg = c === 0 ? 'var(--panel)' : `rgba(${rgb},${a})`;
+      const cls = c === max ? ' class="hot"' : '';
+      const noun = data.scoped ? 'sighting' : 'device';
+      const title = `${_DOW[dow]} ${String(h).padStart(2, '0')}:00 — ${c} ${noun}${c === 1 ? '' : 's'}`;
+      return `<td${cls} style="background:${bg}" title="${title}"></td>`;
+    }).join('');
+    return `<tr><th>${_DOW[dow]}</th>${cells}</tr>`;
+  }).join('');
+  tb.innerHTML = head + body;
+}
+
+window.heatmapFocus = function (kind, addr) {
+  const r = watchRows.find(x => x.kind === kind && x.addr === addr);
+  heatmapAddr = addr; heatmapKind = kind;
+  heatmapLabel = r ? (r.name || r.ssid || r.addr) : addr;
+  loadHeatmap();
+  $('heatmapWrap').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+};
+window.heatmapClearFocus = function () {
+  heatmapAddr = heatmapKind = null; heatmapLabel = '';
+  loadHeatmap();
+};
 
 // Compact hour-of-day histogram as an inline SVG (24 bars, normalized).
 function hourSparkline(hours) {
@@ -1528,7 +1614,7 @@ function renderWatchlist() {
     const star = r.watched ? '★' : '☆';
     const last = r.last_sight ? timeAgo(r.last_sight) : '—';
     return `<tr style="${muted ? 'opacity:.5;' : ''}">` +
-      `<td>${dot}${typeof label === 'string' && label[0] !== '<' ? escapeHtml(label) : label}` +
+      `<td style="cursor:pointer;" title="Show this device's weekly pattern" onclick="heatmapFocus('${r.kind}','${r.addr}')">${dot}${typeof label === 'string' && label[0] !== '<' ? escapeHtml(label) : label}` +
       `<div class="mac">${sub} <span style="border:1px solid var(--panel-border); border-radius:3px; padding:0 3px; font-size:9px;">${kb}</span></div></td>` +
       `<td><b>${r.distinct_days}</b></td>` +
       `<td>${r.sightings}</td>` +
@@ -1730,7 +1816,7 @@ function sparkline(pts) {
 if ($('histSearch')) $('histSearch').addEventListener('input', renderDevices);
 if ($('probeSearch')) $('probeSearch').addEventListener('input', renderProbes);
 if ($('fpSearch')) $('fpSearch').addEventListener('input', renderFingerprints);
-if ($('watchKind')) $('watchKind').addEventListener('change', renderWatchlist);
+if ($('watchKind')) $('watchKind').addEventListener('change', () => { renderWatchlist(); if (!heatmapAddr) loadHeatmap(); });
 if ($('watchShowMuted')) $('watchShowMuted').addEventListener('change', renderWatchlist);
 if ($('btnNetManual')) $('btnNetManual').addEventListener('click', netConnect);
 if ($('netManualPass')) $('netManualPass').addEventListener('keydown', e => { if (e.key === 'Enter') netConnect(); });
